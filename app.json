@@ -10,15 +10,19 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#f2ede8"
     },
     "ios": {
-      "supportsTablet": true
+      "bundleIdentifier": "com.barkat.reads",
+      "supportsTablet": true,
+      "buildNumber": "1"
     },
     "android": {
+      "package": "com.barkat.reads",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#f2ede8"
       },
       "edgeToEdgeEnabled": true
     },
