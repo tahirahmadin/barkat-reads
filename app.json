@@ -40,7 +40,8 @@
             "deploymentTarget": "15.1"
           }
         }
-      ]
+      ],
+      "./plugins/withFollyCoroutineFix.js"
     ],
     "extra": {
       "eas": {
