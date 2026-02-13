@@ -15,7 +15,10 @@
     "ios": {
       "bundleIdentifier": "com.barkat.reads",
       "supportsTablet": true,
-      "buildNumber": "1"
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.barkat.reads",
@@ -28,6 +31,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "2fd45e2c-9e39-4564-8b4b-0abf0a3e9eaf"
+      }
     }
   }
 }
