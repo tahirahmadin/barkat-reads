@@ -31,6 +31,20 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "newArchEnabled": false,
+            "xcconfig": {
+              "OTHER_CPLUSPLUSFLAGS": "-DFOLLY_CFG_NO_COROUTINES=1"
+            }
+          }
+        }
+      ],
+      "react-native-reanimated/plugin"
+    ],
     "extra": {
       "eas": {
         "projectId": "2fd45e2c-9e39-4564-8b4b-0abf0a3e9eaf"
