@@ -36,14 +36,14 @@
         "expo-build-properties",
         {
           "ios": {
-            "newArchEnabled": false,
-            "xcconfig": {
-              "OTHER_CPLUSPLUSFLAGS": "-DFOLLY_CFG_NO_COROUTINES=1"
+            "useFrameworks": "static",
+            "deploymentTarget": "15.1",
+            "podfileProperties": {
+              "use_modular_headers!": "true"
             }
           }
         }
-      ],
-      "react-native-reanimated/plugin"
+      ]
     ],
     "extra": {
       "eas": {
