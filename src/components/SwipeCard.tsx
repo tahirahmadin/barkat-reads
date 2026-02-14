@@ -47,10 +47,10 @@ const getTopicColor = (topic: string): string => {
 };
 
 const getTopicIconName = (topic: string): keyof typeof Ionicons.glyphMap => {
-  const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
+  const icons: Record<string, string> = {
     Hadith: 'book',
-    Deen: 'mosque',
-    Namaz: 'hands',
+    Deen: 'business',      // building/mosque-style
+    Namaz: 'hand-left',    // hands/prayer
     Hajj: 'location',
     Quran: 'library',
     History: 'time',
@@ -58,7 +58,7 @@ const getTopicIconName = (topic: string): keyof typeof Ionicons.glyphMap => {
     'Foundations of Nikah': 'heart-circle',
     'Living Happily After Shadi': 'people',
   };
-  return icons[topic] || 'bookmark';
+  return (icons[topic] || 'bookmark') as keyof typeof Ionicons.glyphMap;
 };
 
 export const SwipeCard: React.FC<SwipeCardProps> = ({

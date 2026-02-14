@@ -22,6 +22,7 @@ const allTopics: Topic[] = [
   'Quran',
   'History',
   'Dua',
+  'Focus',
 ];
 
 const topicLabels: Record<Topic, string> = {
@@ -32,6 +33,7 @@ const topicLabels: Record<Topic, string> = {
   Quran: 'Quran Teachings',
   History: 'Islamic History',
   Dua: 'Duas',
+  Focus: 'Focus',
 };
 
 export const PreferenceSelector: React.FC<PreferenceSelectorProps> = ({

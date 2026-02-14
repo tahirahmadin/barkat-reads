@@ -140,7 +140,7 @@ export const ProfileScreen: React.FC = () => {
                   </Text>
                   <View style={[styles.overallCardIconWrap, !item.locked && { backgroundColor: `${item.topicColor}18` }]}>
                     <Ionicons
-                      name={item.icon}
+                      name={item.icon as keyof typeof Ionicons.glyphMap}
                       size={28}
                       color={item.locked ? '#9ca3af' : item.topicColor}
                     />
