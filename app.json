@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Barkat Reads",
-    "slug": "barkat-reads",
+    "slug": "barkat-learn",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/BarkatReads.png",
