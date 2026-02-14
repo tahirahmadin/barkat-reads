@@ -1,16 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppHeader } from '../components/AppHeader';
+import { StreakCelebrationModal } from '../components/StreakCelebrationModal';
 import { useStore } from '../store/useStore';
 
 export const ProgressScreen: React.FC = () => {
+  const [streakModalVisible, setStreakModalVisible] = useState(false);
   const { stats, learnedCardIds, cardsLearnedToday, dailyLimit } = useStore();
   const progress = dailyLimit > 0 ? Math.min((cardsLearnedToday / dailyLimit) * 100, 100) : 0;
   const streak = stats.streakDays;
@@ -20,17 +23,28 @@ export const ProgressScreen: React.FC = () => {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.bg} pointerEvents="none" />
       <AppHeader title="Progress" />
+      <StreakCelebrationModal
+        visible={streakModalVisible}
+        onClose={() => setStreakModalVisible(false)}
+        streakDays={streak}
+        cardsLearnedToday={cardsLearnedToday}
+        dailyLimit={dailyLimit}
+      />
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Streak */}
-        <View style={styles.hero}>
+        {/* Streak - tappable to open full-screen celebration */}
+        <TouchableOpacity
+          style={styles.hero}
+          onPress={() => setStreakModalVisible(true)}
+          activeOpacity={0.9}
+        >
           <Text style={styles.heroEmoji}>🔥</Text>
           <Text style={styles.heroNumber}>{streak}</Text>
           <Text style={styles.heroLabel}>day streak</Text>
-        </View>
+        </TouchableOpacity>
 
         {/* Today ring */}
         <View style={styles.todayCard}>

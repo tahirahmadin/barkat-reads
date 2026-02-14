@@ -11,7 +11,7 @@ export const WelcomeScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.title}>Barkat Learn</Text>
+        <Text style={styles.title}>Barkat Reads</Text>
         <Text style={styles.subtitle}>
           Learn Islam daily{'\n'}in 5 minutes
         </Text>

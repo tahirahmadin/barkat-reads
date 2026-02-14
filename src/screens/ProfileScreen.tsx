@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -12,48 +12,50 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, CommonActions } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { StreakCelebrationModal } from '../components/StreakCelebrationModal';
 import { AppHeader } from '../components/AppHeader';
 import { useStore } from '../store/useStore';
 
 export const ProfileScreen: React.FC = () => {
   const navigation = useNavigation();
-  const { stats, preferences, learnedCardIds, logout } = useStore();
+  const [streakModalVisible, setStreakModalVisible] = useState(false);
+  const { stats, preferences, learnedCardIds, logout, cardsLearnedToday, dailyLimit, userEmail, userAge, preferredLanguage } = useStore();
 
   const handleLogout = () => {
     logout();
     // Navigation will be reset automatically by AppNavigator useEffect
   };
 
-  // Static user data for now
+  // Static user data for now (email from store when set from login)
   const userName = 'Ahmed Ali';
-  const userEmail = 'ahmed.ali@example.com';
+  const displayEmail = userEmail || 'ahmed.ali@example.com';
   const avatarUri = 'https://i.pravatar.cc/150?img=12';
 
-  // Progress milestones with icons
-  const progressMilestones = [
+  // Your Overall Progress — colors aligned with Feed cards (SwipeCard getTopicColor)
+  const contentProgressItems = [
     {
       id: '1',
-      title: 'Hadis',
-      progress: 12,
-      total: 100,
-      icon: 'book-outline',
-      completed: false,
+      label: 'Hadis',
+      count: 134,
+      icon: 'book-outline' as const,
+      topicColor: '#2D8659',
+      cardBg: '#E8F3EC',
     },
     {
       id: '2',
-      title: 'Stories',
-      progress: 1,
-      total: 100,
-      icon: 'star-outline',
-      completed: false,
+      label: 'Prophet Stories',
+      count: 39,
+      icon: 'star-outline' as const,
+      topicColor: '#5D4E37',
+      cardBg: '#F2EDE6',
     },
     {
       id: '3',
-      title: 'Dua',
-      progress: 0,
-      total: 100,
-      icon: 'hands-outline',
-      completed: false,
+      label: 'Dua',
+      count: 0,
+      icon: 'hands-outline' as const,
+      topicColor: '#8B6F47',
+      cardBg: '#F5EFE8',
       locked: true,
     },
   ];
@@ -67,20 +69,19 @@ export const ProfileScreen: React.FC = () => {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Profile Header */}
-        <View style={styles.profileHeader}>
-          <View style={styles.avatarContainer}>
-            <Image
-              source={{ uri: avatarUri }}
-              style={styles.avatar}
-              resizeMode="cover"
-            />
-            <View style={styles.avatarBadge}>
-              <Ionicons name="checkmark" size={12} color="#FFFFFF" />
-            </View>
+        {/* Simple profile: avatar, email, age — no card background */}
+        <View style={styles.profileSimple}>
+          <Image
+            source={{ uri: avatarUri }}
+            style={styles.avatar}
+            resizeMode="cover"
+          />
+          <View style={styles.profileSimpleInfo}>
+            <Text style={styles.profileSimpleLine} numberOfLines={1}>{displayEmail}</Text>
+            <Text style={styles.profileSimpleLine}>
+              {userAge != null ? `${userAge} years` : '—'}
+            </Text>
           </View>
-          <Text style={styles.userName}>{userName}</Text>
-          <Text style={styles.userEmail}>{userEmail}</Text>
         </View>
 
         {/* Stats */}
@@ -89,100 +90,77 @@ export const ProfileScreen: React.FC = () => {
             <Text style={styles.statValue}>{learnedCardIds.length}</Text>
             <Text style={styles.statLabel}>Learned</Text>
           </View>
-          <View style={styles.stat}>
+          <TouchableOpacity
+            style={styles.stat}
+            onPress={() => setStreakModalVisible(true)}
+            activeOpacity={0.8}
+          >
             <Text style={styles.statValue}>{stats.streakDays}</Text>
             <Text style={styles.statLabel}>Streak</Text>
-          </View>
+          </TouchableOpacity>
           <View style={styles.stat}>
             <Text style={styles.statValue}>{preferences.length}</Text>
             <Text style={styles.statLabel}>Topics</Text>
           </View>
         </View>
 
-        {/* Content Progress */}
+        <StreakCelebrationModal
+          visible={streakModalVisible}
+          onClose={() => setStreakModalVisible(false)}
+          streakDays={stats.streakDays}
+          cardsLearnedToday={cardsLearnedToday}
+          dailyLimit={dailyLimit}
+        />
+
+        {/* Your Overall Progress — reference layout: 2-col cards, label + icon row, big count */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Content Progress</Text>
-          <View style={styles.progressContainer}>
-            {progressMilestones.map((milestone) => (
+          <View style={styles.progressSectionHeader}>
+            <Text style={styles.sectionTitle}>Your Overall Progress</Text>
+            <Ionicons name="options-outline" size={22} color="#1a1a1a" />
+          </View>
+          <View style={styles.progressGrid}>
+            {contentProgressItems.map((item) => (
               <View
-                key={milestone.id}
+                key={item.id}
                 style={[
-                  styles.progressCard,
-                  milestone.locked && styles.progressCardLocked,
+                  styles.overallProgressCard,
+                  {
+                    backgroundColor: item.locked ? '#F1F5F9' : item.cardBg,
+                    borderColor: item.locked ? 'rgba(0,0,0,0.06)' : `${item.topicColor}20`,
+                  },
+                  item.locked && styles.progressCardLocked,
                 ]}
               >
-                <View style={styles.progressCardContent}>
-                  {/* Icon */}
-                  <View style={[
-                    styles.iconContainer,
-                    milestone.locked && styles.iconContainerLocked
-                  ]}>
+                <View style={styles.overallCardTopRow}>
+                  <Text
+                    style={[styles.overallCardLabel, item.locked && styles.progressLabelLocked]}
+                    numberOfLines={2}
+                  >
+                    {item.label}
+                  </Text>
+                  <View style={[styles.overallCardIconWrap, !item.locked && { backgroundColor: `${item.topicColor}18` }]}>
                     <Ionicons
-                      name={milestone.icon as any}
-                      size={24}
-                      color={milestone.locked ? '#9ca3af' : '#2D8659'}
+                      name={item.icon}
+                      size={28}
+                      color={item.locked ? '#9ca3af' : item.topicColor}
                     />
                   </View>
-
-                  {/* Content */}
-                  <View style={styles.progressCardText}>
-                    <View style={styles.progressHeader}>
-                      <Text style={[
-                        styles.progressTitle,
-                        milestone.locked && styles.progressTitleLocked
-                      ]}>
-                        {milestone.title}
-                      </Text>
-                      {milestone.locked ? (
-                        <View style={styles.lockedHeader}>
-                          <Ionicons name="lock-closed" size={14} color="#9ca3af" />
-                          <Text style={styles.lockedText}>Locked</Text>
-                        </View>
-                      ) : (
-                        <Text style={styles.progressCount}>
-                          {milestone.progress}/{milestone.total}
-                        </Text>
-                      )}
-                    </View>
-                    <View style={styles.progressBar}>
-                      <View
-                        style={[
-                          styles.progressFill,
-                          { width: `${(milestone.progress / milestone.total) * 100}%` },
-                          milestone.locked && styles.progressFillLocked,
-                        ]}
-                      />
-                    </View>
-                  </View>
                 </View>
+                <Text style={[styles.overallCardCount, item.locked && styles.progressCountLocked]}>
+                  {item.locked ? '0' : item.count}
+                </Text>
               </View>
             ))}
           </View>
         </View>
 
-        {/* Interests */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Your interests</Text>
-          {preferences.length > 0 ? (
-            <View style={styles.chips}>
-              {preferences.map((topic) => (
-                <View key={topic} style={styles.chip}>
-                  <Text style={styles.chipText}>{topic}</Text>
-                </View>
-              ))}
-            </View>
-          ) : (
-            <Text style={styles.emptyText}>
-              No topics selected yet. Set your interests to see relevant cards.
-            </Text>
-          )}
-        </View>
+
 
         {/* About */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>About</Text>
           <Text style={styles.aboutText}>
-            Barkat Learn helps you learn through bite-sized, swipeable cards.
+            Barkat Reads helps you learn through bite-sized, swipeable cards.
             Choose your interests and learn at your own pace.
           </Text>
         </View>
@@ -236,49 +214,26 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 100,
   },
-  profileHeader: {
+  profileSimple: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 32,
-    paddingTop: 8,
-  },
-  avatarContainer: {
-    position: 'relative',
-    marginBottom: 16,
+    marginBottom: 24,
   },
   avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    borderWidth: 4,
-    borderColor: '#FFFFFF',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#E2E8F0',
+    marginRight: 16,
   },
-  avatarBadge: {
-    position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#2D8659',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
+  profileSimpleInfo: {
+    flex: 1,
+    minWidth: 0,
   },
-  userName: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1a1a1a',
-    marginBottom: 4,
-    ...Platform.select({
-      ios: { fontFamily: 'System' },
-      android: { fontFamily: 'sans-serif' },
-    }),
-  },
-  userEmail: {
+  profileSimpleLine: {
     fontSize: 15,
-    color: '#6b7280',
+    color: '#374151',
+    marginBottom: 2,
     ...Platform.select({
       ios: { fontFamily: 'System' },
       android: { fontFamily: 'sans-serif' },
@@ -377,108 +332,79 @@ const styles = StyleSheet.create({
       android: { fontFamily: 'sans-serif' },
     }),
   },
-  progressContainer: {
+  progressSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  progressGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
   },
-  progressCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
-    overflow: 'hidden',
+  overallProgressCard: {
+    width: '47%',
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1.5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
   progressCardLocked: {
-    opacity: 0.7,
+    opacity: 0.8,
   },
-  progressCardContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    gap: 16,
-  },
-  iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#F0F9F4',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconContainerLocked: {
-    backgroundColor: '#F3F4F6',
-  },
-  progressCardText: {
-    flex: 1,
-  },
-  progressHeader: {
+  overallCardTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
+    alignItems: 'flex-start',
+    marginBottom: 12,
   },
-  lockedHeader: {
-    flexDirection: 'row',
+  overallCardIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
-    gap: 4,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.05)',
   },
-  progressTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+  overallCardLabel: {
+    fontSize: 14,
+    color: '#1a1a1a',
+    flex: 1,
+    paddingRight: 8,
+    lineHeight: 20,
+    ...Platform.select({
+      ios: { fontFamily: 'System' },
+      android: { fontFamily: 'sans-serif' },
+    }),
+  },
+  progressLabelLocked: {
+    color: '#9ca3af',
+  },
+  overallCardCount: {
+    fontSize: 32,
+    fontWeight: '700',
     color: '#1a1a1a',
     ...Platform.select({
       ios: { fontFamily: 'System' },
       android: { fontFamily: 'sans-serif-medium' },
     }),
   },
-  progressTitleLocked: {
+  progressCountLocked: {
     color: '#9ca3af',
-  },
-  progressCount: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#2D8659',
-    ...Platform.select({
-      ios: { fontFamily: 'System' },
-      android: { fontFamily: 'sans-serif-medium' },
-    }),
-  },
-  lockedText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#9ca3af',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    ...Platform.select({
-      ios: { fontFamily: 'System' },
-      android: { fontFamily: 'sans-serif-medium' },
-    }),
-  },
-  progressBar: {
-    height: 6,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#2D8659',
-    borderRadius: 3,
-  },
-  progressFillLocked: {
-    backgroundColor: '#d1d5db',
-    width: '0%',
   },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
     paddingVertical: 16,
     paddingHorizontal: 20,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#FEE2E2',
-    gap: 10,
+
+
   },
   logoutButtonText: {
     fontSize: 16,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -22,8 +22,8 @@ export const LandingScreen: React.FC = () => {
     <View style={styles.container}>
       <View style={styles.content}>
         <View style={styles.logoContainer}>
-          <Text style={styles.logo}>✨</Text>
-          <Text style={styles.title}>Barkat Learn</Text>
+          <Image source={require('../../assets/BarkatReads.png')} style={styles.logoImage} resizeMode="contain" />
+          <Text style={styles.title}>Barkat Reads</Text>
         </View>
         <Text style={styles.subtitle}>
           Learn Islam daily{'\n'}in 5 minutes
@@ -79,6 +79,11 @@ const styles = StyleSheet.create({
   },
   logo: {
     fontSize: 64,
+    marginBottom: 16,
+  },
+  logoImage: {
+    width: 160,
+    height: 160,
     marginBottom: 16,
   },
   title: {

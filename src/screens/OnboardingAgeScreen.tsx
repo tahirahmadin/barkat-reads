@@ -2,15 +2,17 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { useStore } from '../store/useStore';
 
 export const OnboardingAgeScreen: React.FC = () => {
   const navigation = useNavigation();
+  const setUserAge = useStore((s) => s.setUserAge);
   const [age, setAge] = useState<string>('');
 
   const handleContinue = () => {
     const ageNum = parseInt(age, 10);
     if (age && !isNaN(ageNum) && ageNum > 0 && ageNum < 150) {
-      // Store age preference (you can add this to store later)
+      setUserAge(ageNum);
       navigation.navigate('OnboardingLanguage' as never);
     }
   };

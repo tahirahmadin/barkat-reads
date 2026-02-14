@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,12 @@ import {
   Dimensions,
   Animated,
   Easing,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CardStack } from '../components/CardStack';
 import { AppHeader } from '../components/AppHeader';
+import { StreakCelebrationModal } from '../components/StreakCelebrationModal';
 import { useStore } from '../store/useStore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -99,6 +101,7 @@ function useFloatingStar(
 }
 
 export const HomeScreen: React.FC = () => {
+  const [streakModalVisible, setStreakModalVisible] = useState(false);
   const {
     loadContent,
     getAvailableCards,
@@ -107,6 +110,8 @@ export const HomeScreen: React.FC = () => {
     stats,
     loading,
     error,
+    cardsLearnedToday,
+    dailyLimit,
   } = useStore();
 
   const breathGlow = useLoopAnimation(0.85, 1.15, 4000);
@@ -217,11 +222,22 @@ export const HomeScreen: React.FC = () => {
         <AppHeader
           title="Barkat Reads"
           rightComponent={
-            <View style={styles.streakButton}>
+            <TouchableOpacity
+              style={styles.streakButton}
+              onPress={() => setStreakModalVisible(true)}
+              activeOpacity={0.8}
+            >
               <Text style={styles.fireIcon}>🔥</Text>
               <Text style={styles.streakNumber}>{stats.streakDays}</Text>
-            </View>
+            </TouchableOpacity>
           }
+        />
+        <StreakCelebrationModal
+          visible={streakModalVisible}
+          onClose={() => setStreakModalVisible(false)}
+          streakDays={stats.streakDays}
+          cardsLearnedToday={cardsLearnedToday}
+          dailyLimit={dailyLimit}
         />
         <View style={styles.content}>
           {loading ? (

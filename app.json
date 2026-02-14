@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "Barkat Learn",
-    "slug": "barkat-learn",
+    "name": "Barkat Reads",
+    "slug": "barkat-reads",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/BarkatReads.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/BarkatReads.png",
       "resizeMode": "contain",
       "backgroundColor": "#f2ede8"
     },
@@ -16,20 +16,21 @@
       "supportsTablet": true,
       "buildNumber": "1",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "Barkat Learn uses your location to show accurate prayer times for your area."
       }
     },
     "android": {
       "package": "com.barkat.reads",
       "versionCode": 1,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/BarkatReads.png",
         "backgroundColor": "#f2ede8"
       },
       "edgeToEdgeEnabled": true
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/BarkatReads.png"
     },
     "plugins": [
       [
@@ -40,8 +41,7 @@
             "deploymentTarget": "15.1"
           }
         }
-      ],
-      "./plugins/withFollyCoroutineFix.js"
+      ]
     ],
     "extra": {
       "eas": {

@@ -6,7 +6,14 @@ import { fetchSubjects } from '../api/serverActions';
 
 const namazImage = require('../../assets/learn/namaz.jpg');
 
+export type PreferredLanguage = 'English' | 'Hindi';
+
 interface AppState {
+  // User profile (from onboarding / login)
+  userEmail: string | null;
+  userAge: number | null;
+  preferredLanguage: PreferredLanguage | null;
+
   // User preferences
   preferences: Topic[];
   hasCompletedOnboarding: boolean;
@@ -33,6 +40,8 @@ interface AppState {
   // Actions
   loadContent: () => Promise<void>;
   setPreferences: (topics: Topic[]) => void;
+  setUserAge: (age: number) => void;
+  setPreferredLanguage: (language: PreferredLanguage) => void;
   completeOnboarding: () => void;
   markCardAsLearned: (cardId: string) => void;
   saveCard: (cardId: string) => void;
@@ -65,6 +74,9 @@ function feedArticleToLearningCard(article: FeedArticleWithMeta): LearningCard {
 export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
+      userEmail: null,
+      userAge: null,
+      preferredLanguage: null,
       preferences: [],
       hasCompletedOnboarding: false,
       subjects: [],
@@ -83,6 +95,9 @@ export const useStore = create<AppState>()(
         lastLearningDate: null,
         topicsFollowed: 0,
       },
+
+      setUserAge: (age) => set({ userAge: age }),
+      setPreferredLanguage: (language) => set({ preferredLanguage: language }),
 
       loadContent: async () => {
         set({ loading: true, error: null });
@@ -201,6 +216,9 @@ export const useStore = create<AppState>()(
 
       logout: () => {
         set({
+          userEmail: null,
+          userAge: null,
+          preferredLanguage: null,
           hasCompletedOnboarding: false,
           preferences: [],
           learnedCardIds: [],
@@ -263,6 +281,9 @@ export const useStore = create<AppState>()(
       name: 'barkat-learn-storage',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
+        userEmail: state.userEmail,
+        userAge: state.userAge,
+        preferredLanguage: state.preferredLanguage,
         preferences: state.preferences,
         hasCompletedOnboarding: state.hasCompletedOnboarding,
         learnedCardIds: state.learnedCardIds,
@@ -271,7 +292,6 @@ export const useStore = create<AppState>()(
         cardsLearnedToday: state.cardsLearnedToday,
         lastLearningDate: state.lastLearningDate,
         stats: state.stats,
-        // Don't persist allCards as it's static data
       }),
     }
   )

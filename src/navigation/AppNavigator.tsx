@@ -10,7 +10,7 @@ import { OnboardingAgeScreen } from '../screens/OnboardingAgeScreen';
 import { OnboardingLanguageScreen } from '../screens/OnboardingLanguageScreen';
 import { OnboardingPreferencesScreen } from '../screens/OnboardingPreferencesScreen';
 import { HomeScreen } from '../screens/HomeScreen';
-import { ProgressScreen } from '../screens/ProgressScreen';
+import { NamazScreen } from '../screens/NamazScreen';
 import { SavedScreen } from '../screens/SavedScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { useStore } from '../store/useStore';
@@ -60,7 +60,7 @@ const MainTabs = () => {
         name="Home"
         component={HomeScreen}
         options={{
-          tabBarLabel: 'Home',
+          tabBarLabel: 'Feed',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'home' : 'home-outline'}
@@ -74,13 +74,13 @@ const MainTabs = () => {
         }}
       />
       <Tab.Screen
-        name="Progress"
-        component={ProgressScreen}
+        name="Namaz"
+        component={NamazScreen}
         options={{
-          tabBarLabel: 'Progress',
+          tabBarLabel: 'Namaz',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
-              name={focused ? 'stats-chart' : 'stats-chart-outline'}
+              name={focused ? 'time' : 'time-outline'}
               size={24}
               color={color}
             />

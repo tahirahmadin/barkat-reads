@@ -2,21 +2,25 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Dimensions, Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { useStore } from '../store/useStore';
+import type { PreferredLanguage } from '../store/useStore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const languages = [
+const languages: { label: PreferredLanguage; value: string; flag: string }[] = [
   { label: 'English', value: 'en', flag: '🇬🇧' },
   { label: 'Hindi', value: 'hi', flag: '🇮🇳' },
 ];
 
 export const OnboardingLanguageScreen: React.FC = () => {
   const navigation = useNavigation();
+  const setPreferredLanguage = useStore((s) => s.setPreferredLanguage);
   const [selectedLanguage, setSelectedLanguage] = useState<string | null>(null);
 
   const handleContinue = () => {
     if (selectedLanguage) {
-      // Store language preference (you can add this to store later)
+      const lang = languages.find((l) => l.value === selectedLanguage);
+      if (lang) setPreferredLanguage(lang.label);
       navigation.navigate('OnboardingPreferences' as never);
     }
   };
