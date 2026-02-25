@@ -7,18 +7,18 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  Dimensions,
   Platform,
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppHeader } from '../components/AppHeader';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_GAP = 12;
-const CARD_WIDTH = (SCREEN_WIDTH - 48 - CARD_GAP) / 2; // 24 padding each side
+const NAMAZ_LOCATION_KEY = 'barkat-namaz-location';
+
+const ROW_GAP = 12;
 
 type PrayerKey = 'Fajr' | 'Dhuhr' | 'Asr' | 'Maghrib' | 'Isha';
 
@@ -105,12 +105,33 @@ function formatTimeUntil(nextTime: string): string {
   return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 }
 
+async function loadStoredLocation(): Promise<{ cityName: string; lat: number; lon: number } | null> {
+  try {
+    const raw = await AsyncStorage.getItem(NAMAZ_LOCATION_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (data && typeof data.cityName === 'string' && typeof data.lat === 'number' && typeof data.lon === 'number') {
+      return { cityName: data.cityName, lat: data.lat, lon: data.lon };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveLocation(cityName: string, lat: number, lon: number): Promise<void> {
+  try {
+    await AsyncStorage.setItem(NAMAZ_LOCATION_KEY, JSON.stringify({ cityName, lat, lon }));
+  } catch {}
+}
+
 export const NamazScreen: React.FC = () => {
   const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
   const [locationName, setLocationName] = useState<string>('Current location');
   const [timings, setTimings] = useState<AladhanTimings | null>(null);
   const [dateInfo, setDateInfo] = useState<AladhanResponse['data']['date'] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchingLocation, setFetchingLocation] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -133,6 +154,7 @@ export const NamazScreen: React.FC = () => {
         setError('Location permission required');
         setLoading(false);
         setRefreshing(false);
+        setFetchingLocation(false);
         return;
       }
       const pos = await Location.getCurrentPositionAsync({
@@ -142,9 +164,9 @@ export const NamazScreen: React.FC = () => {
       setLocation({ lat: latitude, lon: longitude });
 
       const [rev] = await Location.reverseGeocodeAsync({ latitude, longitude });
-      if (rev?.city || rev?.region) {
-        setLocationName([rev.city, rev.region].filter(Boolean).join(', ') || 'Current location');
-      }
+      const name = [rev?.city, rev?.region].filter(Boolean).join(', ') || 'Current location';
+      setLocationName(name);
+      await saveLocation(name, latitude, longitude);
 
       await loadPrayerTimes(latitude, longitude);
     } catch (e) {
@@ -152,12 +174,26 @@ export const NamazScreen: React.FC = () => {
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setFetchingLocation(false);
     }
   }, [loadPrayerTimes]);
 
   useEffect(() => {
-    fetchLocationAndTimes();
-  }, [fetchLocationAndTimes]);
+    let cancelled = false;
+    (async () => {
+      const stored = await loadStoredLocation();
+      if (cancelled) return;
+      if (stored) {
+        setLocation({ lat: stored.lat, lon: stored.lon });
+        setLocationName(stored.cityName);
+        await loadPrayerTimes(stored.lat, stored.lon);
+        setLoading(false);
+        return;
+      }
+      fetchLocationAndTimes();
+    })();
+    return () => { cancelled = true; };
+  }, [fetchLocationAndTimes, loadPrayerTimes]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -167,6 +203,11 @@ export const NamazScreen: React.FC = () => {
       fetchLocationAndTimes();
     }
   };
+
+  const handleUpdateLocation = useCallback(() => {
+    setFetchingLocation(true);
+    fetchLocationAndTimes();
+  }, [fetchLocationAndTimes]);
 
   const nextPrayer = timings ? getNextPrayer(timings) : null;
   const timeUntil = nextPrayer ? formatTimeUntil(nextPrayer.time) : '';
@@ -193,10 +234,24 @@ export const NamazScreen: React.FC = () => {
       <AppHeader
         title="Prayer time"
         rightComponent={
-          <View style={styles.locationRow}>
-            <Ionicons name="location-outline" size={18} color="#64748B" />
-            <Text style={styles.locationText} numberOfLines={1}>{locationName}</Text>
-          </View>
+          <TouchableOpacity
+            style={styles.locationRow}
+            onPress={handleUpdateLocation}
+            disabled={fetchingLocation}
+            activeOpacity={0.7}
+          >
+            {fetchingLocation ? (
+              <>
+                <ActivityIndicator size="small" color="#64748B" />
+                <Text style={styles.locationText} numberOfLines={1}>Updating…</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="location-outline" size={18} color="#64748B" />
+                <Text style={styles.locationText} numberOfLines={1}>{locationName}</Text>
+              </>
+            )}
+          </TouchableOpacity>
         }
       />
       <ScrollView
@@ -252,31 +307,37 @@ export const NamazScreen: React.FC = () => {
               <Ionicons name="chevron-forward" size={20} color="#64748B" />
             </TouchableOpacity>
 
-            {/* Sehri & Iftar row (above namaz timings) */}
-            <Text style={styles.gridSubtitle}>Hanafi timings</Text>
+            {/* Sehri & Iftar — one row */}
+            <Text style={styles.sectionTitle}>Sehri & Iftar</Text>
             <View style={styles.sehriIftarRow}>
               {SEHRI_IFTAR_ROW.map((row) => (
-                <View key={row.key} style={styles.prayerCard}>
-                  <View style={[styles.prayerIconWrap, { backgroundColor: row.color + '30' }]}>
-                    <Ionicons name={row.icon as any} size={28} color={row.color} />
+                <View key={row.key} style={styles.sehriIftarCard}>
+                  <View style={[styles.sehriIftarIconWrap, { backgroundColor: row.color + '28' }]}>
+                    <Ionicons name={row.icon as any} size={26} color={row.color} />
                   </View>
-                  <Text style={styles.prayerLabel}>{row.label}</Text>
-                  <Text style={styles.prayerTime}>{timings[row.timeKey] || '—'}</Text>
+                  <Text style={styles.sehriIftarLabel}>{row.label}</Text>
+                  <Text style={styles.sehriIftarTime}>{timings[row.timeKey] || '—'}</Text>
                 </View>
               ))}
             </View>
-            {/* Prayer time cards grid */}
-            <View style={styles.grid}>
-              {PRAYER_CONFIG.map((p) => (
-                <View key={p.key} style={styles.prayerCard}>
-                  <View style={[styles.prayerIconWrap, { backgroundColor: p.color + '30' }]}>
-                    <Ionicons name={p.icon as any} size={28} color={p.color} />
+
+            {/* Five daily prayers — single section */}
+            <Text style={styles.sectionTitle}>Daily prayers</Text>
+            <View style={styles.prayerSection}>
+              {PRAYER_CONFIG.map((p, index) => (
+                <React.Fragment key={p.key}>
+                  {index > 0 && <View style={styles.prayerDivider} />}
+                  <View style={styles.prayerRow}>
+                    <View style={[styles.prayerRowIconWrap, { backgroundColor: p.color + '22' }]}>
+                      <Ionicons name={p.icon as any} size={22} color={p.color} />
+                    </View>
+                    <Text style={styles.prayerRowLabel}>{p.label}</Text>
+                    <Text style={styles.prayerRowTime}>{timings[p.key] || '—'}</Text>
                   </View>
-                  <Text style={styles.prayerLabel}>{p.label}</Text>
-                  <Text style={styles.prayerTime}>{timings[p.key] || '—'}</Text>
-                </View>
+                </React.Fragment>
               ))}
             </View>
+            <Text style={styles.footnote}>Hanafi (Asr) • Muslim World League</Text>
           </>
         ) : null}
       </ScrollView>
@@ -420,50 +481,93 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1A202C',
   },
-  gridSubtitle: {
-    fontSize: 12,
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
     color: '#64748B',
     marginBottom: 10,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   sehriIftarRow: {
     flexDirection: 'row',
-    gap: CARD_GAP,
-    marginBottom: CARD_GAP,
+    gap: ROW_GAP,
+    marginBottom: 24,
   },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: CARD_GAP,
-  },
-  prayerCard: {
-    width: CARD_WIDTH,
+  sehriIftarCard: {
+    flex: 1,
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
+    alignItems: 'center',
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6 },
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
       android: { elevation: 2 },
     }),
   },
-  prayerIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  sehriIftarIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
-  prayerLabel: {
-    fontSize: 15,
+  sehriIftarLabel: {
+    fontSize: 14,
     fontWeight: '700',
     color: '#1A202C',
   },
-  prayerTime: {
-    fontSize: 20,
+  sehriIftarTime: {
+    fontSize: 18,
     fontWeight: '800',
     color: '#2D8659',
     marginTop: 4,
+  },
+  prayerSection: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 4,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
+      android: { elevation: 2 },
+    }),
+  },
+  prayerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  prayerDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginHorizontal: 16,
+  },
+  prayerRowIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  prayerRowLabel: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1A202C',
+  },
+  prayerRowTime: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#2D8659',
+  },
+  footnote: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 8,
+    marginBottom: 8,
   },
 });

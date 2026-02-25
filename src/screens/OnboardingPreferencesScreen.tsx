@@ -2,35 +2,36 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Dimensions, Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { Topic } from '../types';
+import type { ContentCategory } from '../types';
+import { CONTENT_CATEGORIES, CONTENT_CATEGORY_LABELS } from '../constants/categories';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PADDING = 24;
 const GAP = 12;
 const CARD_WIDTH = (SCREEN_WIDTH - PADDING * 2 - GAP) / 2;
 
-const preferences: { label: string; value: Topic; icon: string }[] = [
-  { label: 'Hadith', value: 'Hadith', icon: 'book-outline' },
-  { label: 'Dua', value: 'Dua', icon: 'hands-outline' },
-  { label: 'Prophet Stories', value: 'History', icon: 'star-outline' },
-  { label: 'Deeniyat', value: 'Deen', icon: 'library-outline' },
-];
+const preferences: { label: string; value: ContentCategory; icon: string }[] =
+  CONTENT_CATEGORIES.map((cat) => ({
+    label: CONTENT_CATEGORY_LABELS[cat],
+    value: cat,
+    icon: cat === 'Hadis' ? 'book-outline' : cat === 'Dua' ? 'hands-outline' : cat === 'Prophet Stories' ? 'star-outline' : cat === 'Quran Surah' ? 'library-outline' : 'bulb-outline',
+  }));
 
 interface OnboardingPreferencesScreenProps {
-  onComplete: (topics: Topic[]) => void;
+  onComplete: (categories: ContentCategory[]) => void;
 }
 
 export const OnboardingPreferencesScreen: React.FC<OnboardingPreferencesScreenProps> = ({
   onComplete,
 }) => {
   const navigation = useNavigation();
-  const [selectedPreferences, setSelectedPreferences] = useState<Topic[]>([]);
+  const [selectedPreferences, setSelectedPreferences] = useState<ContentCategory[]>([]);
 
-  const handleTogglePreference = (topic: Topic) => {
+  const handleTogglePreference = (category: ContentCategory) => {
     setSelectedPreferences((prev) =>
-      prev.includes(topic)
-        ? prev.filter((t) => t !== topic)
-        : [...prev, topic]
+      prev.includes(category)
+        ? prev.filter((c) => c !== category)
+        : [...prev, category]
     );
   };
 

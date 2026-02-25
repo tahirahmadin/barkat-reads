@@ -7,17 +7,27 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LandingScreen } from '../screens/LandingScreen';
 import { OnboardingAgeScreen } from '../screens/OnboardingAgeScreen';
-import { OnboardingLanguageScreen } from '../screens/OnboardingLanguageScreen';
 import { OnboardingPreferencesScreen } from '../screens/OnboardingPreferencesScreen';
 import { HomeScreen } from '../screens/HomeScreen';
+import { LibraryScreen } from '../screens/LibraryScreen';
 import { NamazScreen } from '../screens/NamazScreen';
-import { SavedScreen } from '../screens/SavedScreen';
+import { BookmarkScreen } from '../screens/BookmarkScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
+import { CompletedCategoryScreen } from '../screens/CompletedCategoryScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
 import { useStore } from '../store/useStore';
-import { Topic } from '../types';
+import type { ContentCategory } from '../types';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+const ProfileStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="ProfileMain" component={ProfileScreen} />
+    <Stack.Screen name="CompletedCategory" component={CompletedCategoryScreen} />
+    <Stack.Screen name="Settings" component={SettingsScreen} />
+  </Stack.Navigator>
+);
 
 const MainTabs = () => {
   const insets = useSafeAreaInsets();
@@ -74,6 +84,23 @@ const MainTabs = () => {
         }}
       />
       <Tab.Screen
+        name="Library"
+        component={LibraryScreen}
+        options={{
+          tabBarLabel: 'Library',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? 'library' : 'library-outline'}
+              size={24}
+              color={color}
+            />
+          ),
+          tabBarButton: (props) => (
+            <TouchableOpacity {...props} style={props.style} />
+          ),
+        }}
+      />
+      <Tab.Screen
         name="Namaz"
         component={NamazScreen}
         options={{
@@ -91,10 +118,10 @@ const MainTabs = () => {
         }}
       />
       <Tab.Screen
-        name="Saved"
-        component={SavedScreen}
+        name="Bookmarks"
+        component={BookmarkScreen}
         options={{
-          tabBarLabel: 'Saved',
+          tabBarLabel: 'Bookmarks',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'bookmark' : 'bookmark-outline'}
@@ -109,7 +136,7 @@ const MainTabs = () => {
       />
       <Tab.Screen
         name="Profile"
-        component={ProfileScreen}
+        component={ProfileStack}
         options={{
           tabBarLabel: 'Profile',
           tabBarIcon: ({ color, focused }) => (
@@ -130,15 +157,19 @@ const MainTabs = () => {
 
 
 export const AppNavigator = () => {
-  const { hasCompletedOnboarding, setPreferences, completeOnboarding } =
+  const { hasCompletedOnboarding, setPreferences, completeOnboarding, initSession } =
     useStore();
   const navigationRef = useRef<any>(null);
   const prevOnboardingRef = useRef(hasCompletedOnboarding);
 
-  const handleOnboardingComplete = (topics: Topic[]) => {
-    setPreferences(topics);
+  const handleOnboardingComplete = (categories: ContentCategory[]) => {
+    setPreferences(categories);
     completeOnboarding();
   };
+
+  useEffect(() => {
+    initSession();
+  }, [initSession]);
 
   // Reset navigation when logout happens (hasCompletedOnboarding changes from true to false)
   useEffect(() => {
@@ -163,7 +194,6 @@ export const AppNavigator = () => {
           <>
             <Stack.Screen name="Landing" component={LandingScreen} />
             <Stack.Screen name="OnboardingAge" component={OnboardingAgeScreen} />
-            <Stack.Screen name="OnboardingLanguage" component={OnboardingLanguageScreen} />
             <Stack.Screen name="OnboardingPreferences">
               {(props) => (
                 <OnboardingPreferencesScreen

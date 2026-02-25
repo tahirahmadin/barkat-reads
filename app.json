@@ -15,6 +15,7 @@
       "bundleIdentifier": "com.barkat.reads",
       "supportsTablet": true,
       "buildNumber": "1",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "Barkat Learn uses your location to show accurate prayer times for your area."

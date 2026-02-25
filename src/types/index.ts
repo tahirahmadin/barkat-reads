@@ -1,52 +1,25 @@
-export type Topic =
-  | "Hadith"
-  | "Deen"
-  | "Namaz"
-  | "Hajj"
-  | "Quran"
-  | "History"
-  | "Dua"
-  | "Focus";
+import type { ContentCategory } from '../constants/categories';
 
-export type Subject = "Islam" | "Productivity";
+export type { ContentCategory } from '../constants/categories';
 
-export interface Article {
-  id: string;
-  title: string;
-  short_text: string;
-  full_text: string;
-  reference: string;
-  image: string | number; // string for URL, number for require()
-}
+export type CardType = 'flash_card' | 'explain_card';
 
-export interface TopicData {
-  name: Topic;
-  description: string;
-  articles: Article[];
-}
-
-export interface SubjectData {
-  name: Subject;
-  topics: TopicData[];
-}
+/** Where to place the image/icon on the card: above the quote text (top) or below it (bottom). */
+export type IconPlacement = 'top' | 'bottom';
 
 export interface LearningCard {
   id: string;
-  subject: string;
-  topic: string;
+  category: ContentCategory;
+  cardType: CardType;
   title: string;
   short_text: string;
   full_text: string;
   reference: string;
   image: string | number;
-  expandable?: boolean; // true = long-form article card, false = micro/quick-read card
-  quoteType?: 'quote'; // if non-expandable and quoteType === 'quote', render as quote card
-  iconPlacement?: 'top' | 'bottom'; // for quote cards: where to place the icon
-  cardColor?: string; // custom color for the card background
-}
-
-export interface UserPreferences {
-  interests: Topic[];
+  /** Image/icon position on card. Default 'top'. */
+  iconPlacement?: IconPlacement;
+  /** Override background color for this card (e.g. '#8B5A3C'). If set, used instead of category color. */
+  cardColor?: string;
 }
 
 export interface UserStats {
@@ -56,44 +29,24 @@ export interface UserStats {
   topicsFollowed: number;
 }
 
-// API model: Subject → Topic → Article (from backend / mockData)
-export interface ArticleItem {
-  id: string;
-  title: string;
-  expandable: boolean;
-  preview: string;
-  content: string;
-  reference?: string;
-  image?: string | number;
-  quoteType?: 'quote'; // if non-expandable and quoteType === 'quote', render as quote card
-  iconPlacement?: 'top' | 'bottom'; // for quote cards: where to place the icon
-  cardColor?: string; // custom color for the card background
+export interface UserPreferences {
+  interests: ContentCategory[];
 }
 
-export interface TopicItem {
+/** API/backend card shape (category-wise JSON, Cards API) */
+export interface CardFromAPI {
   id: string;
-  title: string;
-  articles: ArticleItem[];
-}
-
-export interface SubjectItem {
-  id: string;
-  title: string;
-  topics: TopicItem[];
-}
-
-// Flattened article with subject/topic meta (for store feed)
-export interface FeedArticleWithMeta {
-  id: string;
+  category: string;
+  cardType: string;
   title: string;
   preview: string;
   content: string;
   reference?: string;
   image?: string | number;
-  expandable?: boolean;
-  quoteType?: 'quote';
-  iconPlacement?: 'top' | 'bottom';
+  /** 'top' | 'bottom' - where to show image/icon on the card. Default 'top'. */
+  iconPlacement?: string;
+  /** Optional background color for the card (e.g. '#8B5A3C'). Overrides category color when set. */
   cardColor?: string;
-  subject: string;
-  topic: string;
+  /** Whether this card is bookmarked for the current user (from backend feed). */
+  isBookmarked?: boolean;
 }

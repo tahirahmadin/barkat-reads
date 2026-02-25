@@ -12,11 +12,15 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LearningCard } from '../types';
-import { FullScreenModal } from './FullScreenModal';
+import type { LearningCard, ContentCategory } from '../types';
+import { DetailReaderModal } from './DetailReaderModal';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SWIPE_THRESHOLD = 100;
+
+/** Static assets for cards (use backend images later). */
+const FLASH_CARD_ICON = require('../../assets/learn/icon.webp');
+const EXPLAIN_CARD_BG = require('../../assets/learn/bg.jpg');
 const HEADER_HEIGHT = 60;
 const BOTTOM_NAV_HEIGHT = 86;
 const CONTENT_PADDING_TOP = 10;
@@ -26,39 +30,46 @@ interface SwipeCardProps {
   onSwipeUp: () => void;
   onTap: () => void;
   onSave?: (cardId: string) => void;
+  onDetailOpen?: (cardId: string) => void;
+  onDetailFinish?: (cardId: string) => void;
   containerHeight?: number;
   isStackCard?: boolean;
   stackIndex?: number; // 0 = current, 1 = first back, 2 = second back
+  isSaved?: boolean;
 }
 
-const getTopicColor = (topic: string): string => {
-  const colors: Record<string, string> = {
-    Hadith: '#2D8659',
-    Deen: '#27ae60',
-    Namaz: '#1A5F7A',
-    Hajj: '#C9A961',
-    Quran: '#2C5F7A',
-    History: '#5D4E37',
+const getCategoryColor = (category: ContentCategory): string => {
+  const colors: Record<ContentCategory, string> = {
+    Hadis: '#8B5A3C',
     Dua: '#8B6F47',
-    'Foundations of Nikah': '#8B4789',
-    'Living Happily After Shadi': '#B85C38',
+    'Prophet Stories': '#5D4E37',
+    'Quran Surah': '#2C5F7A',
+    'Islamic Facts': '#27ae60',
   };
-  return colors[topic] || '#718096';
+  return colors[category] ?? '#718096';
 };
 
-const getTopicIconName = (topic: string): keyof typeof Ionicons.glyphMap => {
-  const icons: Record<string, string> = {
-    Hadith: 'book',
-    Deen: 'business',      // building/mosque-style
-    Namaz: 'hand-left',    // hands/prayer
-    Hajj: 'location',
-    Quran: 'library',
-    History: 'time',
-    Dua: 'heart',
-    'Foundations of Nikah': 'heart-circle',
-    'Living Happily After Shadi': 'people',
+/** Tag label for detail-only (hadis-style) cards: Hadis, Dua, Islamic Facts */
+const getDetailOnlyTag = (category: ContentCategory): string => {
+  const tags: Record<ContentCategory, string> = {
+    Hadis: 'HADIS',
+    Dua: 'DUA',
+    'Prophet Stories': 'PROPHET STORIES',
+    'Quran Surah': 'QURAN SURAH',
+    'Islamic Facts': 'ISLAMIC FACTS',
   };
-  return (icons[topic] || 'bookmark') as keyof typeof Ionicons.glyphMap;
+  return tags[category] ?? category.toUpperCase();
+};
+
+const getCategoryIconName = (category: ContentCategory): keyof typeof Ionicons.glyphMap => {
+  const icons: Record<ContentCategory, string> = {
+    Hadis: 'book',
+    Dua: 'heart',
+    'Prophet Stories': 'time',
+    'Quran Surah': 'library',
+    'Islamic Facts': 'bulb',
+  };
+  return (icons[category] || 'bookmark') as keyof typeof Ionicons.glyphMap;
 };
 
 export const SwipeCard: React.FC<SwipeCardProps> = ({
@@ -66,13 +77,20 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
   onSwipeUp,
   onTap,
   onSave,
+  onDetailOpen,
+  onDetailFinish,
   containerHeight,
   isStackCard = false,
   stackIndex = 0,
+  isSaved = false,
 }) => {
-  const isExpandable = card.expandable !== false;
-  const isLocalImage = typeof card.image === 'number';
-  const [imageLoading, setImageLoading] = useState(!isLocalImage);
+  /** Explain cards: full-cover bg (Prophet Stories, Quran Surah). Use category fallback in case cardType is wrong. */
+  const isExplainCard =
+    card.cardType === 'explain_card' ||
+    card.category === 'Prophet Stories' ||
+    card.category === 'Quran Surah';
+  const isFlashCard = !isExplainCard;
+  const [imageLoading, setImageLoading] = useState(false);
   const [showFullScreen, setShowFullScreen] = useState(false);
   const [showSavedFeedback, setShowSavedFeedback] = useState(false);
   const modalOpenRef = useRef(false);
@@ -89,32 +107,39 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
     modalOpenRef.current = showFullScreen;
   }, [showFullScreen]);
 
+  const onSwipeUpRef = useRef(onSwipeUp);
+  const onTapRef = useRef(onTap);
+  const onDetailOpenRef = useRef(onDetailOpen);
+  useEffect(() => { onSwipeUpRef.current = onSwipeUp; }, [onSwipeUp]);
+  useEffect(() => { onTapRef.current = onTap; }, [onTap]);
+  useEffect(() => { onDetailOpenRef.current = onDetailOpen; }, [onDetailOpen]);
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => !modalOpenRef.current,
-      onMoveShouldSetPanResponder: () => !modalOpenRef.current,
+      onMoveShouldSetPanResponder: (_, gs) =>
+        !modalOpenRef.current && Math.abs(gs.dy) > 5,
       onPanResponderGrant: () => {
         if (modalOpenRef.current) return;
-        pan.setOffset({
-          x: (pan.x as any)._value,
-          y: (pan.y as any)._value,
-        });
+        pan.setOffset({ x: 0, y: 0 });
+        pan.setValue({ x: 0, y: 0 });
       },
-      onPanResponderMove: (evt, gestureState) => {
+      onPanResponderMove: (_, gestureState) => {
         if (modalOpenRef.current) return;
         const dy = Math.min(gestureState.dy, 0);
         pan.setValue({ x: 0, y: dy });
         const absDy = Math.abs(dy);
         scale.setValue(1 - absDy / 1000);
       },
-      onPanResponderRelease: (evt, gestureState) => {
+      onPanResponderRelease: (_, gestureState) => {
         if (modalOpenRef.current) return;
         pan.flattenOffset();
         const absDx = Math.abs(gestureState.dx);
         const absDy = Math.abs(gestureState.dy);
         if (absDx < 10 && absDy < 10) {
           setShowFullScreen(true);
-          onTap();
+          onDetailOpenRef.current?.(card.id);
+          onTapRef.current();
           Animated.parallel([
             Animated.spring(pan, { toValue: { x: 0, y: 0 }, useNativeDriver: false }),
             Animated.spring(scale, { toValue: 1, useNativeDriver: false }),
@@ -130,7 +155,7 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
             }),
             Animated.timing(scale, { toValue: 0.8, duration: 300, useNativeDriver: false }),
           ]).start(() => {
-            if (!modalOpenRef.current) onSwipeUp();
+            if (!modalOpenRef.current) onSwipeUpRef.current();
           });
         } else {
           Animated.parallel([
@@ -142,8 +167,10 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
     })
   ).current;
 
-  const topicColor = getTopicColor(card.topic);
-  const imageSource = typeof card.image === 'number' ? card.image : { uri: card.image };
+  const categoryColor = getCategoryColor(card.category);
+  /** For now use static assets; later switch to card.image from backend. */
+  const imageSource = isFlashCard ? FLASH_CARD_ICON : isExplainCard ? EXPLAIN_CARD_BG : FLASH_CARD_ICON;
+  const isLocalImage = true; // static assets (require)
 
   // Stack card styling - Tinder-like effect
   const stackScale = isStackCard ? (stackIndex === 1 ? 0.96 : 0.92) : 1;
@@ -179,49 +206,53 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
     >
       <View style={[
         styles.cardWrapper,
-        isExpandable ? styles.cardWrapperExpandable : styles.cardWrapperMicro,
+        isExplainCard ? styles.cardWrapperExpandable : styles.cardWrapperMicro,
         isStackCard && styles.stackCardWrapper
       ]}>
-        <View style={[styles.glassCard, isExpandable ? styles.glassCardExpandable : styles.glassCardMicro]}>
+        <View style={[styles.glassCard, isExplainCard ? styles.glassCardExpandable : styles.glassCardMicro]}>
           <TouchableOpacity
             activeOpacity={0.98}
-            onPress={() => { setShowFullScreen(true); onTap(); }}
+            onPress={() => {
+              setShowFullScreen(true);
+              onDetailOpen?.(card.id);
+              onTap();
+            }}
             style={styles.cardContent}
           >
-            {isExpandable ? (
-              <ExpandableCardLayout
+            {isFlashCard ? (
+              <DetailOnlyCardLayout
                 card={card}
-                topicColor={topicColor}
+                categoryColor={categoryColor}
+                onBookmarkPress={handleBookmarkPress}
+                showSavedFeedback={showSavedFeedback}
+                isSaved={isSaved}
+              />
+            ) : (
+              <FullBackgroundCardLayout
+                card={card}
                 imageSource={imageSource}
                 imageLoading={imageLoading}
                 isLocalImage={isLocalImage}
                 setImageLoading={setImageLoading}
                 onBookmarkPress={handleBookmarkPress}
                 showSavedFeedback={showSavedFeedback}
-              />
-            ) : card.quoteType === 'quote' ? (
-              <QuoteCardLayout
-                card={card}
-                topicColor={topicColor}
-                onBookmarkPress={handleBookmarkPress}
-                showSavedFeedback={showSavedFeedback}
-              />
-            ) : (
-              <MicroCardLayout
-                card={card}
-                topicColor={topicColor}
-                onBookmarkPress={handleBookmarkPress}
-                showSavedFeedback={showSavedFeedback}
+                isSaved={isSaved}
               />
             )}
           </TouchableOpacity>
         </View>
       </View>
-      <FullScreenModal
+      <DetailReaderModal
         visible={showFullScreen}
-        onClose={() => setShowFullScreen(false)}
+        cardId={card.id}
         title={card.title}
         content={card.full_text}
+        category={card.category}
+        onFinish={() => {
+          onDetailFinish?.(card.id);
+          setShowFullScreen(false);
+        }}
+        onClose={() => setShowFullScreen(false)}
       />
     </Animated.View>
   );
@@ -281,81 +312,307 @@ function CardDecoration({ variant }: { variant: 'expandable' | 'micro' }) {
 }
 
 // ——— Expandable: Tinder-style hero card (big image, title on image, “Read more”)
-function ExpandableCardLayout({
+const hadisStyles = StyleSheet.create({
+  wrapper: { flex: 1, borderRadius: 24, position: 'relative', overflow: 'hidden' },
+  inner: { flex: 1, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16, zIndex: 1 },
+  tagRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 12 },
+  tagPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+  },
+  tagText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.8,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  title: { fontSize: 20, fontWeight: '700', color: '#FFFFFF', textAlign: 'center', marginBottom: 14, ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }) },
+  iconContainer: { alignItems: 'center', justifyContent: 'center', marginVertical: 12, width: '100%', height: 100 },
+  iconImage: { width: '100%', height: '100%', maxWidth: 180 },
+  quoteText: { fontSize: 22, fontWeight: '500', color: '#FFFFFF', lineHeight: 32, textAlign: 'center', fontStyle: 'italic', marginBottom: 12, ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }) },
+  reference: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.8)', textAlign: 'center', letterSpacing: 0.8, marginBottom: 12, ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }) },
+  spacer: { flex: 1, minHeight: 8 },
+  bottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 12,
+    paddingBottom: 4,
+    position: 'relative',
+  },
+  tapRowCentered: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  tapLabel: { fontSize: 13, color: 'rgba(255,255,255,0.9)', fontWeight: '600', ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }) },
+  iconButton: {
+    position: 'absolute',
+    right: 0,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  savedFeedback: { position: 'absolute', right: 16, bottom: 68, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, zIndex: 10 },
+  savedFeedbackText: { fontSize: 13, fontWeight: '600', color: '#fff', ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }) },
+});
+
+function DetailOnlyCardLayout({
   card,
-  topicColor,
+  categoryColor,
+  onBookmarkPress,
+  showSavedFeedback,
+  isSaved,
+}: {
+  card: LearningCard;
+  categoryColor: string;
+  onBookmarkPress?: () => void;
+  showSavedFeedback?: boolean;
+  isSaved?: boolean;
+}) {
+  const iconPlacement = card.iconPlacement ?? 'top';
+  /** Static icon for now; use card.image from backend later. */
+  const imageSource = FLASH_CARD_ICON;
+  const imageBlock = (
+    <View style={hadisStyles.iconContainer}>
+      <Image source={imageSource} style={hadisStyles.iconImage} resizeMode="contain" />
+    </View>
+  );
+  const bgColor = card.cardColor ?? categoryColor;
+  const tagLabel = getDetailOnlyTag(card.category);
+  return (
+    <View style={[hadisStyles.wrapper, { backgroundColor: bgColor }]}>
+      <CardDecoration variant="micro" />
+      <View style={hadisStyles.inner}>
+        <View style={hadisStyles.tagRow}>
+          <View style={hadisStyles.tagPill}>
+            <Text style={hadisStyles.tagText}>{tagLabel}</Text>
+          </View>
+        </View>
+        <Text style={hadisStyles.title} numberOfLines={2}>{card.title}</Text>
+        {iconPlacement === 'top' && imageBlock}
+        <Text style={hadisStyles.quoteText} numberOfLines={4}>{card.short_text}</Text>
+        {card.reference ? (
+          <Text style={hadisStyles.reference}>{card.reference.toUpperCase()}</Text>
+        ) : null}
+        {iconPlacement === 'bottom' && imageBlock}
+        <View style={hadisStyles.spacer} />
+        <View style={hadisStyles.bottomRow}>
+          <View style={hadisStyles.tapRowCentered}>
+            <Text style={hadisStyles.tapLabel}>Swipe for next</Text>
+            <Ionicons name="arrow-up-outline" size={18} color="rgba(255,255,255,0.9)" />
+          </View>
+          <TouchableOpacity
+            style={hadisStyles.iconButton}
+            onPress={() => onBookmarkPress?.()}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name={isSaved || showSavedFeedback ? 'bookmark' : 'bookmark-outline'}
+              size={22}
+              color="rgba(255,255,255,0.95)"
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+      {showSavedFeedback && (
+        <View style={hadisStyles.savedFeedback}>
+          <Text style={hadisStyles.savedFeedbackText}>Bookmarked</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** Full-cover background image with title overlay only (no preview). Used for Prophet Stories, Quran Surah. */
+function FullBackgroundCardLayout({
+  card,
   imageSource,
   imageLoading,
   isLocalImage,
   setImageLoading,
   onBookmarkPress,
   showSavedFeedback,
+  isSaved,
 }: {
   card: LearningCard;
-  topicColor: string;
   imageSource: { uri: string } | number;
   imageLoading: boolean;
   isLocalImage: boolean;
   setImageLoading: (v: boolean) => void;
   onBookmarkPress?: () => void;
   showSavedFeedback?: boolean;
+  isSaved?: boolean;
 }) {
+  const tagLabel = getDetailOnlyTag(card.category);
   return (
-    <>
-      <View style={expandableStyles.heroSection}>
-        <View style={expandableStyles.imageWrap}>
-          {imageLoading && (
-            <View style={expandableStyles.imageLoader}>
-              <ActivityIndicator size="large" color={topicColor} />
-            </View>
-          )}
-          <Image
-            source={imageSource}
-            style={expandableStyles.heroImage}
-            resizeMode="cover"
-            onLoadStart={() => !isLocalImage && setImageLoading(true)}
-            onLoadEnd={() => setImageLoading(false)}
-            onLoad={() => setImageLoading(false)}
-            onError={() => setImageLoading(false)}
-          />
+    <View style={fullBgStyles.wrapper}>
+      <Image
+        source={imageSource}
+        style={fullBgStyles.backgroundImage}
+        resizeMode="cover"
+        onLoadStart={() => !isLocalImage && setImageLoading(true)}
+        onLoadEnd={() => setImageLoading(false)}
+        onLoad={() => setImageLoading(false)}
+        onError={() => setImageLoading(false)}
+      />
+      {imageLoading && (
+        <View style={fullBgStyles.loader}>
+          <ActivityIndicator size="large" color="#fff" />
         </View>
-        <View style={expandableStyles.heroOverlay} pointerEvents="none" />
-        <View style={expandableStyles.heroGradient} pointerEvents="none" />
-        <View style={expandableStyles.badgeRow}>
-          <View style={[expandableStyles.topicPill, { backgroundColor: topicColor }]}>
-            <Text style={expandableStyles.topicPillText}>{card.topic}</Text>
-          </View>
+      )}
+      <View style={fullBgStyles.overlay} pointerEvents="none" />
+      <View style={fullBgStyles.tagRow} pointerEvents="none">
+        <View style={fullBgStyles.tagPill}>
+          <Text style={fullBgStyles.tagText}>{tagLabel}</Text>
         </View>
-        <View style={expandableStyles.titleOverImage}>
-          <Text style={expandableStyles.heroTitle} numberOfLines={2}>{card.title}</Text>
-        </View>
-        <CardDecoration variant="expandable" />
       </View>
-      <View style={expandableStyles.body}>
-        <CardDecoration variant="expandable" />
-        <View style={expandableStyles.bodyContent}>
-          <Text style={expandableStyles.preview} numberOfLines={3}>{card.short_text}</Text>
-          <View style={expandableStyles.ctaRow}>
-            <Text style={[expandableStyles.ctaText, { color: topicColor }]}>Read full article</Text>
-            <Ionicons name="arrow-forward" size={18} color={topicColor} />
-          </View>
+      <View style={fullBgStyles.titleWrap} pointerEvents="none">
+        <Text style={fullBgStyles.title} numberOfLines={3}>{card.title}</Text>
+      </View>
+      <View style={fullBgStyles.bottomRow}>
+        <View style={fullBgStyles.tapRowCentered}>
+          <Text style={fullBgStyles.tapLabel}>Swipe for next</Text>
+          <Ionicons name="arrow-up-outline" size={18} color="rgba(255,255,255,0.9)" />
         </View>
         <TouchableOpacity
-          style={expandableStyles.bookmarkBottomRight}
+          style={fullBgStyles.iconButton}
           onPress={() => onBookmarkPress?.()}
           activeOpacity={0.8}
         >
-          <Ionicons name={showSavedFeedback ? 'bookmark' : 'bookmark-outline'} size={22} color="#fff" />
+          <Ionicons
+            name={isSaved || showSavedFeedback ? 'bookmark' : 'bookmark-outline'}
+            size={22}
+            color="rgba(255,255,255,0.95)"
+          />
         </TouchableOpacity>
-        {showSavedFeedback && (
-          <View style={expandableStyles.savedFeedback}>
-            <Text style={expandableStyles.savedFeedbackText}>Saved</Text>
-          </View>
-        )}
       </View>
-    </>
+      {showSavedFeedback && (
+        <View style={fullBgStyles.savedFeedback}>
+          <Text style={fullBgStyles.savedFeedbackText}>Bookmarked</Text>
+        </View>
+      )}
+    </View>
   );
 }
+
+const fullBgStyles = StyleSheet.create({
+  wrapper: {
+    flex: 1,
+    borderRadius: 24,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  backgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  loader: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#1a1a1a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    zIndex: 1,
+  },
+  tagRow: {
+    position: 'absolute',
+    top: 16,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 3,
+  },
+  tagPill: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 18,
+  },
+  tagText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.8,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  titleWrap: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    lineHeight: 36,
+    letterSpacing: -0.3,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 8,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  bottomRow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    paddingTop: 16,
+    zIndex: 3,
+  },
+  tapRowCentered: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  tapLabel: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.9)',
+    fontWeight: '600',
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  iconButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  savedFeedback: {
+    position: 'absolute',
+    right: 16,
+    bottom: 68,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    zIndex: 10,
+  },
+  savedFeedbackText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+});
 
 // Default PNG for non-expanding cards (muslim bride and groom illustration)
 const MICRO_CARD_IMAGE_URI =
@@ -479,57 +736,32 @@ function QuoteCardLayout({
   topicColor,
   onBookmarkPress,
   showSavedFeedback,
+  isSaved,
 }: {
   card: LearningCard;
   topicColor: string;
   onBookmarkPress?: () => void;
   showSavedFeedback?: boolean;
+  isSaved?: boolean;
 }) {
   const imageUri = typeof card.image === 'string' ? card.image : MICRO_CARD_IMAGE_URI;
-  const backgroundColor = card.cardColor || topicColor;
-  const iconPlacement = card.iconPlacement || 'top';
-
   return (
-    <View style={[quoteStyles.wrapper, { backgroundColor }]}>
+    <View style={[quoteStyles.wrapper, { backgroundColor: topicColor }]}>
       <CardDecoration variant="micro" />
       <View style={quoteStyles.inner}>
-        {/* Heading at top */}
         <Text style={quoteStyles.heading} numberOfLines={2}>{card.title}</Text>
-
-        {/* Icon from iconscout - conditionally placed */}
-        {iconPlacement === 'top' && (
-          <View style={quoteStyles.iconContainer}>
-            <Image
-              source={{ uri: imageUri }}
-              style={quoteStyles.iconImage}
-              resizeMode="contain"
-            />
-          </View>
-        )}
-
-        {/* Quote text (preview content) */}
+        <View style={quoteStyles.iconContainer}>
+          <Image
+            source={{ uri: imageUri }}
+            style={quoteStyles.iconImage}
+            resizeMode="contain"
+          />
+        </View>
         <Text style={quoteStyles.quoteText}>{card.short_text}</Text>
-
-        {/* Reference citation */}
         {card.reference && (
           <Text style={quoteStyles.reference}>{card.reference}</Text>
         )}
-
-        {/* Spacer to push bottom content down */}
         <View style={quoteStyles.spacer} />
-
-        {/* Icon at bottom if placement is bottom - positioned above swipe text */}
-        {iconPlacement === 'bottom' && (
-          <View style={quoteStyles.iconContainerBottom}>
-            <Image
-              source={{ uri: imageUri }}
-              style={quoteStyles.iconImage}
-              resizeMode="contain"
-            />
-          </View>
-        )}
-
-        {/* Swipe indicator */}
         <View style={quoteStyles.tapRow}>
           <Text style={quoteStyles.tapLabel}>Swipe for next</Text>
           <Ionicons name="arrow-up-outline" size={18} color="rgba(255,255,255,0.9)" />
@@ -540,11 +772,15 @@ function QuoteCardLayout({
         onPress={() => onBookmarkPress?.()}
         activeOpacity={0.8}
       >
-        <Ionicons name={showSavedFeedback ? 'bookmark' : 'bookmark-outline'} size={22} color="rgba(255,255,255,0.95)" />
+        <Ionicons
+          name={isSaved || showSavedFeedback ? 'bookmark' : 'bookmark-outline'}
+          size={22}
+          color="rgba(255,255,255,0.95)"
+        />
       </TouchableOpacity>
       {showSavedFeedback && (
         <View style={quoteStyles.savedFeedback}>
-          <Text style={quoteStyles.savedFeedbackText}>Saved</Text>
+          <Text style={quoteStyles.savedFeedbackText}>Bookmarked</Text>
         </View>
       )}
     </View>
@@ -557,11 +793,13 @@ function MicroCardLayout({
   topicColor,
   onBookmarkPress,
   showSavedFeedback,
+  isSaved,
 }: {
   card: LearningCard;
   topicColor: string;
   onBookmarkPress?: () => void;
   showSavedFeedback?: boolean;
+  isSaved?: boolean;
 }) {
   const imageUri = typeof card.image === 'string' ? card.image : MICRO_CARD_IMAGE_URI;
   return (
@@ -588,11 +826,15 @@ function MicroCardLayout({
         onPress={() => onBookmarkPress?.()}
         activeOpacity={0.8}
       >
-        <Ionicons name={showSavedFeedback ? 'bookmark' : 'bookmark-outline'} size={22} color="rgba(255,255,255,0.95)" />
+        <Ionicons
+          name={isSaved || showSavedFeedback ? 'bookmark' : 'bookmark-outline'}
+          size={22}
+          color="rgba(255,255,255,0.95)"
+        />
       </TouchableOpacity>
       {showSavedFeedback && (
         <View style={microStyles.savedFeedback}>
-          <Text style={microStyles.savedFeedbackText}>Saved</Text>
+          <Text style={microStyles.savedFeedbackText}>Bookmarked</Text>
         </View>
       )}
     </View>
@@ -673,152 +915,6 @@ const styles = StyleSheet.create({
   },
   cardContent: {
     flex: 1,
-  },
-});
-
-const expandableStyles = StyleSheet.create({
-  heroSection: {
-    height: '52%',
-    minHeight: 220,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  imageWrap: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#1a1a1a',
-  },
-  heroImage: {
-    width: '100%',
-    height: '100%',
-  },
-  imageLoader: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    zIndex: 1,
-  },
-  heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-  },
-  heroGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: '70%',
-    backgroundColor: 'transparent',
-  },
-  badgeRow: {
-    position: 'absolute',
-    top: 14,
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  topicPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 18,
-  },
-  topicPillText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
-  },
-  bookmarkCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  bookmarkBottomRight: {
-    position: 'absolute',
-    right: 16,
-    bottom: 16,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  savedFeedback: {
-    position: 'absolute',
-    right: 16,
-    bottom: 68,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    zIndex: 10,
-  },
-  savedFeedbackText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#fff',
-    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
-  },
-  titleOverImage: {
-    position: 'absolute',
-    left: 18,
-    right: 18,
-    bottom: 18,
-    zIndex: 5,
-  },
-  heroTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    lineHeight: 34,
-    letterSpacing: -0.5,
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 6,
-    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
-  },
-  body: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 20,
-    justifyContent: 'space-between',
-    backgroundColor: '#111',
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  bodyContent: {
-    flex: 1,
-    justifyContent: 'space-between',
-    zIndex: 1,
-  },
-  preview: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.82)',
-    lineHeight: 24,
-    letterSpacing: 0.2,
-    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }),
-  },
-  ctaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  ctaText: {
-    fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
   },
 });
 

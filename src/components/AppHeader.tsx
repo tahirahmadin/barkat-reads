@@ -1,22 +1,19 @@
 import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface AppHeaderProps {
   title: string;
+  leftComponent?: React.ReactNode;
   rightComponent?: React.ReactNode;
 }
 
-export const AppHeader: React.FC<AppHeaderProps> = ({ title, rightComponent }) => {
-  const insets = useSafeAreaInsets();
-  // Minimal top padding - just enough for safe area, reduced significantly
-  const topPadding = Math.max(insets.top - 30, 0);
-
+export const AppHeader: React.FC<AppHeaderProps> = ({ title, leftComponent, rightComponent }) => {
   return (
-    <View style={[styles.container,]}>
+    <View style={styles.container}>
       <View style={styles.headerRow}>
+        {leftComponent ? <View style={styles.leftSection}>{leftComponent}</View> : null}
         <Text style={styles.title}>{title}</Text>
-        {rightComponent && <View style={styles.rightSection}>{rightComponent}</View>}
+        {rightComponent ? <View style={styles.rightSection}>{rightComponent}</View> : null}
       </View>
     </View>
   );
@@ -35,7 +32,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  leftSection: {
+    minWidth: 32,
+    alignItems: 'flex-start',
+  },
   title: {
+    flex: 1,
     fontSize: 28,
     fontWeight: '700',
     color: '#1A202C',

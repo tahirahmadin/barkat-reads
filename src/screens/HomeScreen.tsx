@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { CardStack } from '../components/CardStack';
 import { AppHeader } from '../components/AppHeader';
 import { StreakCelebrationModal } from '../components/StreakCelebrationModal';
@@ -106,12 +107,17 @@ export const HomeScreen: React.FC = () => {
     loadContent,
     getAvailableCards,
     markCardAsLearned,
-    saveCard,
+    bookmarkCard,
+    unbookmarkCard,
+    markDetailAsFinished,
+    markDetailOpened,
+    detailOpenedCardIds,
     stats,
     loading,
     error,
     cardsLearnedToday,
     dailyLimit,
+    bookmarkedCardIds,
   } = useStore();
 
   const breathGlow = useLoopAnimation(0.85, 1.15, 4000);
@@ -129,6 +135,17 @@ export const HomeScreen: React.FC = () => {
   useEffect(() => {
     loadContent();
   }, []);
+
+  const handleToggleBookmark = useCallback(
+    (cardId: string) => {
+      if (bookmarkedCardIds.includes(cardId)) {
+        unbookmarkCard(cardId);
+      } else {
+        bookmarkCard(cardId);
+      }
+    },
+    [bookmarkedCardIds, bookmarkCard, unbookmarkCard]
+  );
 
   const availableCards = getAvailableCards();
 
@@ -220,16 +237,25 @@ export const HomeScreen: React.FC = () => {
       </View>
       <View style={styles.container}>
         <AppHeader
-          title="Barkat Reads"
+          title="Barkat Daily"
           rightComponent={
-            <TouchableOpacity
-              style={styles.streakButton}
-              onPress={() => setStreakModalVisible(true)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.fireIcon}>🔥</Text>
-              <Text style={styles.streakNumber}>{stats.streakDays}</Text>
-            </TouchableOpacity>
+            <View style={styles.headerRight}>
+              <TouchableOpacity
+                style={styles.refreshButton}
+                onPress={loadContent}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="refresh" size={18} color="#1A202C" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.streakButton}
+                onPress={() => setStreakModalVisible(true)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.fireIcon}>🔥</Text>
+                <Text style={styles.streakNumber}>{stats.streakDays}</Text>
+              </TouchableOpacity>
+            </View>
           }
         />
         <StreakCelebrationModal
@@ -252,8 +278,12 @@ export const HomeScreen: React.FC = () => {
             <CardStack
               cards={availableCards}
               onCardLearned={markCardAsLearned}
-              onCardSaved={saveCard}
+              onCardBookmark={handleToggleBookmark}
               dailyLimitReached={false}
+              detailOpenedCardIds={detailOpenedCardIds}
+              onDetailOpen={markDetailOpened}
+              onDetailFinish={markDetailAsFinished}
+              bookmarkedCardIds={bookmarkedCardIds}
             />
           )}
         </View>
@@ -371,6 +401,19 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 70,
     justifyContent: 'center',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  refreshButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    marginRight: 8,
   },
   centered: {
     flex: 1,

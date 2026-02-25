@@ -6,59 +6,38 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
-import { Topic } from '../types';
+import { ContentCategory } from '../types';
+import { CONTENT_CATEGORIES, CONTENT_CATEGORY_LABELS } from '../constants/categories';
 
 interface PreferenceSelectorProps {
-  selectedTopics: Topic[];
-  onToggleTopic: (topic: Topic) => void;
+  selectedCategories: ContentCategory[];
+  onToggleCategory: (category: ContentCategory) => void;
   onContinue: () => void;
 }
 
-const allTopics: Topic[] = [
-  'Hadith',
-  'Deen',
-  'Namaz',
-  'Hajj',
-  'Quran',
-  'History',
-  'Dua',
-  'Focus',
-];
-
-const topicLabels: Record<Topic, string> = {
-  Hadith: 'Hadith',
-  Deen: 'Deen Basics',
-  Namaz: 'Namaz',
-  Hajj: 'Hajj & Umrah',
-  Quran: 'Quran Teachings',
-  History: 'Islamic History',
-  Dua: 'Duas',
-  Focus: 'Focus',
-};
-
 export const PreferenceSelector: React.FC<PreferenceSelectorProps> = ({
-  selectedTopics,
-  onToggleTopic,
+  selectedCategories,
+  onToggleCategory,
   onContinue,
 }) => {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Select Your Interests</Text>
       <Text style={styles.subtitle}>
-        Choose topics you'd like to learn about
+        Choose categories you'd like to learn about
       </Text>
 
       <ScrollView style={styles.topicsContainer}>
-        {allTopics.map((topic) => {
-          const isSelected = selectedTopics.includes(topic);
+        {CONTENT_CATEGORIES.map((category) => {
+          const isSelected = selectedCategories.includes(category);
           return (
             <TouchableOpacity
-              key={topic}
+              key={category}
               style={[
                 styles.topicButton,
                 isSelected && styles.topicButtonSelected,
               ]}
-              onPress={() => onToggleTopic(topic)}
+              onPress={() => onToggleCategory(category)}
             >
               <Text
                 style={[
@@ -66,7 +45,7 @@ export const PreferenceSelector: React.FC<PreferenceSelectorProps> = ({
                   isSelected && styles.topicTextSelected,
                 ]}
               >
-                {topicLabels[topic]}
+                {CONTENT_CATEGORY_LABELS[category]}
               </Text>
             </TouchableOpacity>
           );
@@ -76,13 +55,13 @@ export const PreferenceSelector: React.FC<PreferenceSelectorProps> = ({
       <TouchableOpacity
         style={[
           styles.continueButton,
-          selectedTopics.length === 0 && styles.continueButtonDisabled,
+          selectedCategories.length === 0 && styles.continueButtonDisabled,
         ]}
         onPress={onContinue}
-        disabled={selectedTopics.length === 0}
+        disabled={selectedCategories.length === 0}
       >
         <Text style={styles.continueButtonText}>
-          Continue ({selectedTopics.length} selected)
+          Continue ({selectedCategories.length} selected)
         </Text>
       </TouchableOpacity>
     </View>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,13 +8,18 @@ import {
   Platform,
   Dimensions,
   Image,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { AppHeader } from '../components/AppHeader';
 import { useStore } from '../store/useStore';
-import { LearningCard } from '../types';
-import { FullScreenModal } from '../components/FullScreenModal';
+import { getBookmarks } from '../api/serverActions';
+import { validateCards } from '../api/validateCards';
+import { cardFromAPIToLearningCard } from '../store/useStore';
+import type { LearningCard, ContentCategory } from '../types';
+import { DetailReaderModal } from '../components/DetailReaderModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PADDING = 20;
@@ -23,25 +28,21 @@ const CARD_WIDTH = (SCREEN_WIDTH - PADDING * 2 - GAP) / 2;
 const CARD_MIN_HEIGHT = 180;
 // Width for 2.5 cards visible: (screen - padding*2 - gap*2) / 2.5
 const ARTICLE_CARD_WIDTH = (SCREEN_WIDTH - PADDING * 2 - GAP * 2) / 2.2;
-const SAVED_CARD_IMAGE_URI =
+const BOOKMARK_CARD_IMAGE_URI =
   'https://cdn3d.iconscout.com/3d/premium/thumb/ramadhan-calender-3d-icon-png-download-11211796.png';
 
-const getTopicColor = (topic: string): string => {
-  const colors: Record<string, string> = {
-    Hadith: '#2D8659',
-    Deen: '#27ae60',
-    Namaz: '#1A5F7A',
-    Hajj: '#C9A961',
-    Quran: '#2C5F7A',
-    History: '#5D4E37',
+const getCategoryColor = (category: ContentCategory): string => {
+  const colors: Record<ContentCategory, string> = {
+    Hadis: '#2D8659',
     Dua: '#8B6F47',
-    'Foundations of Nikah': '#8B4789',
-    'Living Happily After Shadi': '#B85C38',
+    'Prophet Stories': '#5D4E37',
+    'Quran Surah': '#2C5F7A',
+    'Islamic Facts': '#27ae60',
   };
-  return colors[topic] || '#718096';
+  return colors[category] ?? '#718096';
 };
 
-function SavedCardDecoration() {
+function BookmarkCardDecoration() {
   const positions = [
     { top: 12, right: 12, size: 6 },
     { top: 32, left: 10, size: 5 },
@@ -71,18 +72,64 @@ function SavedCardDecoration() {
   );
 }
 
-export const SavedScreen: React.FC = () => {
-  const { getSavedCards } = useStore();
-  const savedCards = getSavedCards();
+export const BookmarkScreen: React.FC = () => {
+  const {
+    authToken,
+    getBookmarkedCards,
+    markDetailOpened,
+    markDetailAsFinished,
+  } = useStore();
+
+  const [apiBookmarks, setApiBookmarks] = useState<LearningCard[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selectedCard, setSelectedCard] = useState<LearningCard | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
 
-  const expandableCards = savedCards.filter((card) => card.expandable !== false);
-  const nonExpandableCards = savedCards.filter((card) => card.expandable === false);
+  const loadBookmarks = useCallback(async () => {
+    if (!authToken) {
+      setApiBookmarks(null);
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    const res = await getBookmarks(100, 0, authToken);
+    setLoading(false);
+    if (!res.success) {
+      setError(res.error ?? 'Failed to load bookmarks');
+      setApiBookmarks([]);
+      return;
+    }
+    const items = res.data?.items ?? [];
+    const validated = validateCards(items);
+    const cards: LearningCard[] = validated.map(cardFromAPIToLearningCard);
+    setApiBookmarks(cards);
+  }, [authToken]);
+
+  useEffect(() => {
+    loadBookmarks();
+  }, [loadBookmarks]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadBookmarks();
+    setRefreshing(false);
+  }, [loadBookmarks]);
+
+  // When authenticated, show API bookmarks; otherwise show local store bookmarks
+  const bookmarkedCards =
+    authToken && apiBookmarks !== null
+      ? apiBookmarks
+      : getBookmarkedCards();
+
+  const explainCards = bookmarkedCards.filter((card) => card.cardType === 'explain_card');
+  const flashCards = bookmarkedCards.filter((card) => card.cardType === 'flash_card');
 
   const handleCardPress = (card: LearningCard) => {
     setSelectedCard(card);
     setModalVisible(true);
+    markDetailOpened(card.id);
   };
 
   const handleCloseModal = () => {
@@ -91,20 +138,20 @@ export const SavedScreen: React.FC = () => {
   };
 
   const renderCard = (card: LearningCard, isRow?: boolean) => {
-    const topicColor = getTopicColor(card.topic);
-    const imageUri = typeof card.image === 'string' ? card.image : SAVED_CARD_IMAGE_URI;
+    const categoryColor = getCategoryColor(card.category);
+    const imageUri = typeof card.image === 'string' ? card.image : BOOKMARK_CARD_IMAGE_URI;
     return (
       <TouchableOpacity
         key={card.id}
         style={[
           styles.card,
           isRow && styles.articleCard,
-          { backgroundColor: topicColor },
+          { backgroundColor: categoryColor },
         ]}
         activeOpacity={0.95}
         onPress={() => handleCardPress(card)}
       >
-        <SavedCardDecoration />
+        <BookmarkCardDecoration />
         <View style={styles.inner}>
           <Text style={styles.title} numberOfLines={2}>
             {card.title}
@@ -129,13 +176,22 @@ export const SavedScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.bg} pointerEvents="none" />
-      <AppHeader title="Saved" />
-      {savedCards.length === 0 ? (
+      <AppHeader title="Bookmarks" />
+      {authToken && loading && !refreshing && apiBookmarks === null ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color="#2D8659" />
+        </View>
+      ) : authToken && error ? (
+        <View style={styles.empty}>
+          <Text style={styles.emptyTitle}>Could not load bookmarks</Text>
+          <Text style={styles.emptySub}>{error}</Text>
+        </View>
+      ) : bookmarkedCards.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyIcon}>📌</Text>
-          <Text style={styles.emptyTitle}>No saved cards</Text>
+          <Text style={styles.emptyTitle}>No bookmarks</Text>
           <Text style={styles.emptySub}>
-            Tap the bookmark on a card to save it here for later.
+            Tap the bookmark on a card to add it here for later.
           </Text>
         </View>
       ) : (
@@ -143,9 +199,16 @@ export const SavedScreen: React.FC = () => {
           style={styles.scroll}
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#2D8659"
+            />
+          }
         >
           {/* Expandable Cards Section - horizontal row */}
-          {expandableCards.length > 0 && (
+          {explainCards.length > 0 && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Articles</Text>
@@ -158,13 +221,13 @@ export const SavedScreen: React.FC = () => {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.articlesRow}
               >
-                {expandableCards.map((card) => renderCard(card, true))}
+                {explainCards.map((card) => renderCard(card, true))}
               </ScrollView>
             </View>
           )}
 
           {/* Non-Expandable Cards Section - 2-column grid */}
-          {nonExpandableCards.length > 0 && (
+          {flashCards.length > 0 && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Quick Reads</Text>
@@ -173,18 +236,24 @@ export const SavedScreen: React.FC = () => {
                 </TouchableOpacity>
               </View>
               <View style={styles.grid}>
-                {nonExpandableCards.map((card) => renderCard(card))}
+                {flashCards.map((card) => renderCard(card))}
               </View>
             </View>
           )}
         </ScrollView>
       )}
       {selectedCard && (
-        <FullScreenModal
+        <DetailReaderModal
           visible={modalVisible}
-          onClose={handleCloseModal}
+          cardId={selectedCard.id}
           title={selectedCard.title}
           content={selectedCard.full_text}
+          category={selectedCard.category}
+          onFinish={() => {
+            markDetailAsFinished(selectedCard.id);
+            handleCloseModal();
+          }}
+          onClose={handleCloseModal}
         />
       )}
     </SafeAreaView>
@@ -335,6 +404,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 40,
     paddingBottom: 80,
+  },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyIcon: {
     fontSize: 48,

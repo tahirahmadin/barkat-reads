@@ -8,22 +8,106 @@ import {
   Image,
   TouchableOpacity,
   Alert,
+  RefreshControl,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, CommonActions } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { StreakCelebrationModal } from '../components/StreakCelebrationModal';
 import { AppHeader } from '../components/AppHeader';
+import { PreferenceSelector } from '../components/PreferenceSelector';
 import { useStore } from '../store/useStore';
+import { CONTENT_CATEGORIES, type ContentCategory } from '../constants/categories';
+import { deleteAccount } from '../api/serverActions';
+
+const getCategoryColor = (category: ContentCategory): string => {
+  const colors: Record<ContentCategory, string> = {
+    Hadis: '#2D8659',
+    Dua: '#8B6F47',
+    'Prophet Stories': '#5D4E37',
+    'Quran Surah': '#2C5F7A',
+    'Islamic Facts': '#27ae60',
+  };
+  return colors[category] ?? '#718096';
+};
+
+const getCategoryIcon = (category: ContentCategory): keyof typeof Ionicons.glyphMap => {
+  const icons: Record<ContentCategory, string> = {
+    Hadis: 'book',
+    Dua: 'heart',
+    'Prophet Stories': 'time',
+    'Quran Surah': 'library',
+    'Islamic Facts': 'bulb',
+  };
+  return (icons[category] || 'bookmark') as keyof typeof Ionicons.glyphMap;
+};
+
+const categoryToSlug = (category: ContentCategory): string => {
+  if (category === 'Hadis') return 'hadis';
+  if (category === 'Dua') return 'dua';
+  if (category === 'Prophet Stories') return 'prophet_stories';
+  if (category === 'Quran Surah') return 'quran_surah';
+  return 'facts';
+};
 
 export const ProfileScreen: React.FC = () => {
   const navigation = useNavigation();
   const [streakModalVisible, setStreakModalVisible] = useState(false);
-  const { stats, preferences, learnedCardIds, logout, cardsLearnedToday, dailyLimit, userEmail, userAge, preferredLanguage } = useStore();
+  const [refreshing, setRefreshing] = useState(false);
+  const {
+    stats,
+    preferences,
+    setPreferences,
+    learnedCardIds,
+    logout,
+    authToken,
+    cardsLearnedToday,
+    dailyLimit,
+    userEmail,
+    userAge,
+    preferredLanguage,
+    allCards,
+    finishedDetailCardIds,
+    categoryStats,
+    loadCategoryStats,
+    statsOverview,
+  } = useStore();
+
+  const [preferencesModalVisible, setPreferencesModalVisible] = useState(false);
+
+  React.useEffect(() => {
+    if (authToken && categoryStats === null) loadCategoryStats();
+  }, [authToken, categoryStats, loadCategoryStats]);
 
   const handleLogout = () => {
     logout();
     // Navigation will be reset automatically by AppNavigator useEffect
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete account',
+      'Are you sure? This will permanently delete your account and all data. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const result = await deleteAccount(authToken ?? null);
+            if (result.success) {
+              logout();
+            } else {
+              Alert.alert(
+                'Error',
+                result.error ?? 'Could not delete account. Please try again.'
+              );
+            }
+          },
+        },
+      ]
+    );
   };
 
   // Static user data for now (email from store when set from login)
@@ -31,43 +115,88 @@ export const ProfileScreen: React.FC = () => {
   const displayEmail = userEmail || 'ahmed.ali@example.com';
   const avatarUri = 'https://i.pravatar.cc/150?img=12';
 
-  // Your Overall Progress — colors aligned with Feed cards (SwipeCard getTopicColor)
-  const contentProgressItems = [
-    {
-      id: '1',
-      label: 'Hadis',
-      count: 134,
-      icon: 'book-outline' as const,
-      topicColor: '#2D8659',
-      cardBg: '#E8F3EC',
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    await loadCategoryStats();
+    setRefreshing(false);
+  }, [loadCategoryStats]);
+
+  const handleTogglePreference = React.useCallback(
+    (category: ContentCategory) => {
+      const next = preferences.includes(category)
+        ? preferences.filter((c) => c !== category)
+        : [...preferences, category];
+      setPreferences(next);
     },
-    {
-      id: '2',
-      label: 'Prophet Stories',
-      count: 39,
-      icon: 'star-outline' as const,
-      topicColor: '#5D4E37',
-      cardBg: '#F2EDE6',
-    },
-    {
-      id: '3',
-      label: 'Dua',
-      count: 0,
-      icon: 'hands-outline' as const,
-      topicColor: '#8B6F47',
-      cardBg: '#F5EFE8',
-      locked: true,
-    },
-  ];
+    [preferences, setPreferences]
+  );
+
+  const handleClosePreferencesModal = React.useCallback(() => {
+    setPreferencesModalVisible(false);
+  }, []);
+
+  // Progress derived from store categoryStats (from API progress/user-progress-stats) when available, else from local cards
+  const contentProgressItems = CONTENT_CATEGORIES.map((category) => {
+    const backend = categoryStats?.[category];
+    const totalInCategory =
+      backend?.total ?? allCards.filter((c) => c.category === category).length;
+    const finishedInCategory =
+      backend?.completed ??
+      allCards.filter(
+        (c) => c.category === category && finishedDetailCardIds.includes(c.id)
+      ).length;
+    const learnedInCategory = allCards.filter(
+      (c) => c.category === category && learnedCardIds.includes(c.id)
+    ).length;
+    const topicColor = getCategoryColor(category);
+    const displayCount =
+      totalInCategory === 0 ? '—' : `${finishedInCategory} / ${totalInCategory}`;
+    return {
+      id: category,
+      label: category,
+      displayCount,
+      finishedInCategory,
+      totalInCategory,
+      learnedInCategory,
+      icon: getCategoryIcon(category),
+      topicColor,
+      cardBg: `${topicColor}12`,
+    };
+  });
+
+  const totalFinished = finishedDetailCardIds.length;
+  const totalCards = allCards.length;
+
+  const displayLearnt = statsOverview?.consumed ?? totalFinished;
+  const displayStreak = statsOverview?.streak ?? stats.streakDays;
+  const displayTopics = statsOverview?.topic ?? preferences.length;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.bg} pointerEvents="none" />
-      <AppHeader title="Profile" />
+      <AppHeader
+        title="Profile"
+        rightComponent={
+          <TouchableOpacity
+            onPress={() => setPreferencesModalVisible(true)}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            style={styles.headerSettingsTouch}
+          >
+            <Ionicons name="settings-outline" size={24} color="#1a1a1a" />
+          </TouchableOpacity>
+        }
+      />
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#2D8659"
+          />
+        }
       >
         {/* Simple profile: avatar, email, age — no card background */}
         <View style={styles.profileSimple}>
@@ -84,22 +213,22 @@ export const ProfileScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Stats */}
+        {/* Stats: total learnt (from API overview), streak, topics */}
         <View style={styles.statsRow}>
           <View style={styles.stat}>
-            <Text style={styles.statValue}>{learnedCardIds.length}</Text>
-            <Text style={styles.statLabel}>Learned</Text>
+            <Text style={styles.statValue}>{displayLearnt}</Text>
+            <Text style={styles.statLabel}>Learnt</Text>
           </View>
           <TouchableOpacity
             style={styles.stat}
             onPress={() => setStreakModalVisible(true)}
             activeOpacity={0.8}
           >
-            <Text style={styles.statValue}>{stats.streakDays}</Text>
+            <Text style={styles.statValue}>{displayStreak}</Text>
             <Text style={styles.statLabel}>Streak</Text>
           </TouchableOpacity>
           <View style={styles.stat}>
-            <Text style={styles.statValue}>{preferences.length}</Text>
+            <Text style={styles.statValue}>{displayTopics}</Text>
             <Text style={styles.statLabel}>Topics</Text>
           </View>
         </View>
@@ -107,7 +236,7 @@ export const ProfileScreen: React.FC = () => {
         <StreakCelebrationModal
           visible={streakModalVisible}
           onClose={() => setStreakModalVisible(false)}
-          streakDays={stats.streakDays}
+          streakDays={displayStreak}
           cardsLearnedToday={cardsLearnedToday}
           dailyLimit={dailyLimit}
         />
@@ -115,41 +244,40 @@ export const ProfileScreen: React.FC = () => {
         {/* Your Overall Progress — reference layout: 2-col cards, label + icon row, big count */}
         <View style={styles.section}>
           <View style={styles.progressSectionHeader}>
-            <Text style={styles.sectionTitle}>Your Overall Progress</Text>
-            <Ionicons name="options-outline" size={22} color="#1a1a1a" />
+            <Text style={styles.sectionTitle}>My learnings</Text>
           </View>
           <View style={styles.progressGrid}>
             {contentProgressItems.map((item) => (
-              <View
+              <TouchableOpacity
                 key={item.id}
+                activeOpacity={0.85}
                 style={[
                   styles.overallProgressCard,
                   {
-                    backgroundColor: item.locked ? '#F1F5F9' : item.cardBg,
-                    borderColor: item.locked ? 'rgba(0,0,0,0.06)' : `${item.topicColor}20`,
+                    backgroundColor: item.cardBg,
+                    borderColor: `${item.topicColor}20`,
                   },
-                  item.locked && styles.progressCardLocked,
                 ]}
+                onPress={() =>
+                  navigation.navigate(
+                    'CompletedCategory' as never,
+                    {
+                      categorySlug: categoryToSlug(item.id as ContentCategory),
+                      categoryLabel: item.label,
+                    } as never
+                  )
+                }
               >
-                <View style={styles.overallCardTopRow}>
-                  <Text
-                    style={[styles.overallCardLabel, item.locked && styles.progressLabelLocked]}
-                    numberOfLines={2}
-                  >
+                <View style={styles.overallCardRow}>
+                  <View style={[styles.overallCardIconWrap, { backgroundColor: `${item.topicColor}18` }]}>
+                    <Ionicons name={item.icon} size={20} color={item.topicColor} />
+                  </View>
+                  <Text style={styles.overallCardLabel} numberOfLines={1}>
                     {item.label}
                   </Text>
-                  <View style={[styles.overallCardIconWrap, !item.locked && { backgroundColor: `${item.topicColor}18` }]}>
-                    <Ionicons
-                      name={item.icon as keyof typeof Ionicons.glyphMap}
-                      size={28}
-                      color={item.locked ? '#9ca3af' : item.topicColor}
-                    />
-                  </View>
+                  <Text style={styles.overallCardCount}>{item.displayCount}</Text>
                 </View>
-                <Text style={[styles.overallCardCount, item.locked && styles.progressCountLocked]}>
-                  {item.locked ? '0' : item.count}
-                </Text>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         </View>
@@ -191,8 +319,40 @@ export const ProfileScreen: React.FC = () => {
             <Ionicons name="log-out-outline" size={20} color="#DC2626" />
             <Text style={styles.logoutButtonText}>Logout</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.deleteAccountButton}
+            onPress={handleDeleteAccount}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="trash-outline" size={16} color="#DC2626" />
+            <Text style={styles.deleteAccountText}>Delete account</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={preferencesModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={handleClosePreferencesModal}
+      >
+        <SafeAreaView style={styles.modalSafe}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Topics</Text>
+            <TouchableOpacity
+              onPress={handleClosePreferencesModal}
+              style={styles.modalDoneButton}
+            >
+              <Text style={styles.modalDoneText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          <PreferenceSelector
+            selectedCategories={preferences}
+            onToggleCategory={handleTogglePreference}
+            onContinue={handleClosePreferencesModal}
+          />
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -333,60 +493,51 @@ const styles = StyleSheet.create({
     }),
   },
   progressSectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 10,
+  },
+  headerSettingsTouch: {
+    padding: 4,
   },
   progressGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+    gap: 8,
   },
   overallProgressCard: {
-    width: '47%',
-    borderRadius: 20,
-    padding: 18,
-    borderWidth: 1.5,
+    width: '100%',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  progressCardLocked: {
-    opacity: 0.8,
-  },
-  overallCardTopRow: {
+  overallCardRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
+    alignItems: 'center',
+    gap: 12,
   },
   overallCardIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.05)',
   },
   overallCardLabel: {
-    fontSize: 14,
-    color: '#1a1a1a',
     flex: 1,
+    fontSize: 13,
+    color: '#1a1a1a',
     paddingRight: 8,
-    lineHeight: 20,
+    lineHeight: 18,
     ...Platform.select({
       ios: { fontFamily: 'System' },
       android: { fontFamily: 'sans-serif' },
     }),
   },
-  progressLabelLocked: {
-    color: '#9ca3af',
-  },
   overallCardCount: {
-    fontSize: 32,
+    fontSize: 18,
     fontWeight: '700',
     color: '#1a1a1a',
     ...Platform.select({
@@ -394,8 +545,41 @@ const styles = StyleSheet.create({
       android: { fontFamily: 'sans-serif-medium' },
     }),
   },
-  progressCountLocked: {
-    color: '#9ca3af',
+  modalSafe: {
+    flex: 1,
+    backgroundColor: '#fafafa',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0e0e0',
+    backgroundColor: '#fff',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1a1a1a',
+    ...Platform.select({
+      ios: { fontFamily: 'System' },
+      android: { fontFamily: 'sans-serif-medium' },
+    }),
+  },
+  modalDoneButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  modalDoneText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#27ae60',
+    ...Platform.select({
+      ios: { fontFamily: 'System' },
+      android: { fontFamily: 'sans-serif-medium' },
+    }),
   },
   logoutButton: {
     flexDirection: 'row',
@@ -403,12 +587,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 16,
     paddingHorizontal: 20,
-
-
   },
   logoutButtonText: {
     fontSize: 16,
     fontWeight: '600',
+    color: '#DC2626',
+    ...Platform.select({
+      ios: { fontFamily: 'System' },
+      android: { fontFamily: 'sans-serif-medium' },
+    }),
+  },
+  deleteAccountButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 6,
+    paddingVertical: 4,
+  },
+  deleteAccountText: {
+    marginLeft: 6,
+    fontSize: 13,
+    fontWeight: '500',
     color: '#DC2626',
     ...Platform.select({
       ios: { fontFamily: 'System' },

@@ -13,7 +13,7 @@ export const OnboardingAgeScreen: React.FC = () => {
     const ageNum = parseInt(age, 10);
     if (age && !isNaN(ageNum) && ageNum > 0 && ageNum < 150) {
       setUserAge(ageNum);
-      navigation.navigate('OnboardingLanguage' as never);
+      navigation.navigate('OnboardingPreferences' as never);
     }
   };
 
