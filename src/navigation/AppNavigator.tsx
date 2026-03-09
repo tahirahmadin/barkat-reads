@@ -17,7 +17,6 @@ import { ProfileScreen } from '../screens/ProfileScreen';
 import { CompletedCategoryScreen } from '../screens/CompletedCategoryScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { useStore } from '../store/useStore';
-import type { ContentCategory } from '../types';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -69,11 +68,13 @@ const MainTabs = () => {
           <TouchableOpacity
             {...props}
             style={props.style}
-            onPress={() => {
+            onPress={(e) => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              props.onPress?.();
+              props.onPress?.(e);
             }}
-          />
+          >
+            {props.children}
+          </TouchableOpacity>
         ),
       }}
     >
@@ -158,8 +159,8 @@ export const AppNavigator = () => {
   const navigationRef = useRef<any>(null);
   const prevOnboardingRef = useRef(hasCompletedOnboarding);
 
-  const handleOnboardingComplete = (categories: ContentCategory[]) => {
-    setPreferences(categories);
+  const handleOnboardingComplete = (slugs: string[]) => {
+    setPreferences(slugs);
     completeOnboarding();
   };
 

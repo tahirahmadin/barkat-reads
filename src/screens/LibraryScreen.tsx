@@ -32,19 +32,17 @@ const COLLECTION_ILLUSTRATION_URI =
 
 const PATTERN_IMG = require('../../assets/pattern.avif');
 
-/** Turn backend slug into display name (e.g. "prophet stories" -> "Prophet Stories"). */
+/** Turn backend slug into display name when categoryName not from API (e.g. "prophet-stories" -> "Prophet Stories"). */
 function slugToDisplayName(slug: string): string {
   return slug
     .trim()
+    .replace(/-/g, ' ')
     .split(/\s+/)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(' ');
 }
 
-/** Slug for cards API: spaces -> hyphens, lowercase (e.g. "prophet stories" -> "prophet-stories"). */
-function slugToApiSlug(slug: string): string {
-  return slug.trim().replace(/\s+/g, '-').toLowerCase();
-}
+/** Slug for cards API: backend expects slug as returned (e.g. "hadis", "prophet-stories"). */
 
 const COLORS = {
   brand: '#063628',
@@ -56,22 +54,22 @@ const COLORS = {
   error: '#B91C1C',
 } as const;
 
-const SLUG_COLORS: Record<string, string> = {
-  hadis: '#0d9488',
-  dua: '#8B6F47',
-  'prophet stories': '#7C3AED',
-  'quran surah': '#2C5F7A',
-  'islamic facts': '#D97706',
-  quotes: '#0ea5e9',
-};
+/** Fallback when API does not provide backgroundColor (valid hex). */
+const FALLBACK_CARD_COLOR = '#5C6B67';
 
-function getCategoryColor(slug: string): string {
-  return SLUG_COLORS[slug.trim().toLowerCase()] ?? '#5C6B67';
+function getCategoryColor(backgroundColor: string | undefined): string {
+  if (backgroundColor && /^#[0-9A-Fa-f]{6}$/i.test(backgroundColor)) return backgroundColor;
+  return FALLBACK_CARD_COLOR;
 }
 
 const cardShadow = Platform.select({
-  ios: { shadowColor: '#063628', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12 },
-  android: { elevation: 4 },
+  ios: {
+    shadowColor: '#063628',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 14,
+  },
+  android: { elevation: 5 },
 });
 
 export const LibraryScreen: React.FC = () => {
@@ -112,8 +110,7 @@ export const LibraryScreen: React.FC = () => {
       }
       setCategoryCardsLoading(true);
       setCategoryCardsError(null);
-      const apiSlug = slugToApiSlug(slug);
-      const res = await fetchCardsByCategory(apiSlug, 100, 0, authToken);
+      const res = await fetchCardsByCategory(slug, 100, 0, authToken);
       setCategoryCardsLoading(false);
       if (!res.success) {
         setCategoryCardsError(res.error ?? 'Failed to load cards');
@@ -146,13 +143,13 @@ export const LibraryScreen: React.FC = () => {
   const categoryCards = useMemo((): LearningCard[] => {
     if (!selectedSlug) return [];
     if (authToken) return categoryCardsFromApi;
-    const displayName = slugToDisplayName(selectedSlug);
+    const displayName = categoriesFromApi?.[selectedSlug]?.categoryName ?? slugToDisplayName(selectedSlug);
     return allCards.filter((c) => c.category === displayName);
-  }, [allCards, selectedSlug, authToken, categoryCardsFromApi]);
+  }, [allCards, selectedSlug, authToken, categoryCardsFromApi, categoriesFromApi]);
 
   // Selected category: card stack view
   if (selectedSlug) {
-    const displayName = slugToDisplayName(selectedSlug);
+    const displayName = categoriesFromApi?.[selectedSlug]?.categoryName ?? slugToDisplayName(selectedSlug);
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.backgroundLayer} pointerEvents="none">
@@ -265,10 +262,10 @@ export const LibraryScreen: React.FC = () => {
                   </Text>
                 </View>
               ) : (
-                collectionsList.map(({ slug, total, image, backgroundColor }) => {
-                  const color = backgroundColor ?? getCategoryColor(slug);
+                collectionsList.map(({ slug, total, image, backgroundColor, categoryName }) => {
+                  const color = getCategoryColor(backgroundColor);
                   const imageUri = image ?? COLLECTION_ILLUSTRATION_URI;
-                  const displayName = slugToDisplayName(slug);
+                  const displayName = categoryName ?? slugToDisplayName(slug);
                   return (
                     <TouchableOpacity
                       key={slug}
@@ -387,7 +384,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#E0E0E0',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 10,
+    borderRadius: 20,
   },
   heroTagText: {
     fontSize: 12,
@@ -397,13 +394,15 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     marginTop: 10,
-    borderRadius: 20,
+    borderRadius: 28,
     overflow: 'hidden',
     paddingTop: 12,
     paddingHorizontal: 16,
     paddingBottom: 14,
     justifyContent: 'space-between',
     position: 'relative',
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
   },
   heroContent: {
     flexDirection: 'column',

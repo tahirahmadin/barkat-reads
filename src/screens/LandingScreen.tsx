@@ -16,7 +16,6 @@ import { Ionicons } from '@expo/vector-icons';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { loginWithApple, getCurrentUser } from '../api/serverActions';
 import { useStore } from '../store/useStore';
-import type { ContentCategory } from '../types';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -71,20 +70,11 @@ export const LandingScreen: React.FC = () => {
           const backendPrefs = me.success ? me.data?.preferences ?? [] : [];
 
           if (backendPrefs && backendPrefs.length > 0) {
-            const normalized = backendPrefs
-              .map((p) => {
-                const v = String(p).toLowerCase();
-                if (v === 'hadis' || v === 'hadith') return 'Hadis';
-                if (v === 'dua') return 'Dua';
-                if (v === 'prophet stories' || v === 'prophet_stories') return 'Prophet Stories';
-                if (v === 'quran surah' || v === 'quran_surah') return 'Quran Surah';
-                if (v === 'islamic facts' || v === 'islamic_facts') return 'Islamic Facts';
-                return null;
-              })
-              .filter((x): x is ContentCategory => x !== null);
-
-            if (normalized.length > 0) {
-              setPreferences(normalized);
+            const slugs = backendPrefs.filter(
+              (p): p is string => typeof p === 'string' && p.length > 0
+            );
+            if (slugs.length > 0) {
+              setPreferences(slugs);
               completeOnboarding();
               navigation.navigate('Main' as never);
               return;

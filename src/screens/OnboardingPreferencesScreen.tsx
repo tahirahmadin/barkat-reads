@@ -1,45 +1,46 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Dimensions, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Dimensions, Platform, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import type { ContentCategory } from '../types';
-import { CONTENT_CATEGORIES, CONTENT_CATEGORY_LABELS } from '../constants/categories';
+import { fetchAvailableTopics } from '../api/serverActions';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PADDING = 24;
 const GAP = 12;
 const CARD_WIDTH = (SCREEN_WIDTH - PADDING * 2 - GAP) / 2;
 
-const preferences: { label: string; value: ContentCategory; icon: string }[] =
-  CONTENT_CATEGORIES.map((cat) => ({
-    label: CONTENT_CATEGORY_LABELS[cat],
-    value: cat,
-    icon: cat === 'Hadis' ? 'book-outline' : cat === 'Dua' ? 'hands-outline' : cat === 'Prophet Stories' ? 'star-outline' : cat === 'Quran Surah' ? 'library-outline' : 'bulb-outline',
-  }));
-
 interface OnboardingPreferencesScreenProps {
-  onComplete: (categories: ContentCategory[]) => void;
+  onComplete: (slugs: string[]) => void;
 }
 
 export const OnboardingPreferencesScreen: React.FC<OnboardingPreferencesScreenProps> = ({
   onComplete,
 }) => {
   const navigation = useNavigation();
-  const [selectedPreferences, setSelectedPreferences] = useState<ContentCategory[]>([]);
+  const [topics, setTopics] = useState<{ slug: string; label: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedSlugs, setSelectedSlugs] = useState<string[]>([]);
 
-  const handleTogglePreference = (category: ContentCategory) => {
-    setSelectedPreferences((prev) =>
-      prev.includes(category)
-        ? prev.filter((c) => c !== category)
-        : [...prev, category]
+  useEffect(() => {
+    let cancelled = false;
+    fetchAvailableTopics().then((list) => {
+      if (!cancelled) {
+        setTopics(list);
+        setLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleToggle = (slug: string) => {
+    setSelectedSlugs((prev) =>
+      prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]
     );
   };
 
   const handleContinue = () => {
-    if (selectedPreferences.length > 0) {
-      onComplete(selectedPreferences);
-      navigation.navigate('Main' as never);
-    }
+    onComplete(selectedSlugs);
+    navigation.navigate('Main' as never);
   };
 
   return (
@@ -68,47 +69,60 @@ export const OnboardingPreferencesScreen: React.FC<OnboardingPreferencesScreenPr
           </Text>
 
           <View style={styles.optionsContainer}>
-            {preferences.map((pref) => {
-              const isSelected = selectedPreferences.includes(pref.value);
-              return (
-                <TouchableOpacity
-                  key={pref.value}
-                  style={[
-                    styles.optionButton,
-                    isSelected && styles.optionButtonSelected,
-                  ]}
-                  onPress={() => handleTogglePreference(pref.value)}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.cardContent}>
-                    <View style={[
-                      styles.iconContainer,
-                      isSelected && styles.iconContainerSelected
-                    ]}>
-                      <Ionicons
-                        name={pref.icon as any}
-                        size={28}
-                        color={isSelected ? '#2D8659' : '#718096'}
-                      />
-                    </View>
-                    <Text
-                      style={[
-                        styles.optionText,
-                        isSelected && styles.optionTextSelected,
-                      ]}
-                      numberOfLines={2}
-                    >
-                      {pref.label}
-                    </Text>
-                    {isSelected && (
-                      <View style={styles.checkmarkContainer}>
-                        <Ionicons name="checkmark-circle" size={24} color="#2D8659" />
+            {loading ? (
+              <View style={styles.loadingWrap}>
+                <ActivityIndicator size="large" color="#2D8659" />
+                <Text style={styles.loadingText}>Loading topics…</Text>
+              </View>
+            ) : topics.length === 0 ? (
+              <View style={styles.emptyWrap}>
+                <Text style={styles.emptyText}>
+                  No topics from server. You can set preferences after signing in.
+                </Text>
+              </View>
+            ) : (
+              topics.map((topic) => {
+                const isSelected = selectedSlugs.includes(topic.slug);
+                return (
+                  <TouchableOpacity
+                    key={topic.slug}
+                    style={[
+                      styles.optionButton,
+                      isSelected && styles.optionButtonSelected,
+                    ]}
+                    onPress={() => handleToggle(topic.slug)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.cardContent}>
+                      <View style={[
+                        styles.iconContainer,
+                        isSelected && styles.iconContainerSelected
+                      ]}>
+                        <Ionicons
+                          name="book-outline"
+                          size={28}
+                          color={isSelected ? '#2D8659' : '#718096'}
+                        />
                       </View>
-                    )}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+                      <Text
+                        style={[
+                          styles.optionText,
+                          isSelected && styles.optionTextSelected,
+                        ]}
+                        numberOfLines={2}
+                      >
+                        {topic.label}
+                      </Text>
+                      {isSelected && (
+                        <View style={styles.checkmarkContainer}>
+                          <Ionicons name="checkmark-circle" size={24} color="#2D8659" />
+                        </View>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            )}
           </View>
         </View>
       </ScrollView>
@@ -117,17 +131,20 @@ export const OnboardingPreferencesScreen: React.FC<OnboardingPreferencesScreenPr
         <TouchableOpacity
           style={[
             styles.continueButton,
-            selectedPreferences.length === 0 && styles.continueButtonDisabled,
+            (loading || (topics.length > 0 && selectedSlugs.length === 0)) && styles.continueButtonDisabled,
           ]}
           onPress={handleContinue}
-          disabled={selectedPreferences.length === 0}
+          disabled={loading || (topics.length > 0 && selectedSlugs.length === 0)}
           activeOpacity={0.8}
         >
           <Text style={styles.continueButtonText}>
-            {selectedPreferences.length > 0
-              ? `Continue with ${selectedPreferences.length} ${selectedPreferences.length === 1 ? 'interest' : 'interests'}`
-              : 'Select at least one interest'
-            }
+            {loading
+              ? 'Loading…'
+              : selectedSlugs.length > 0
+                ? `Continue with ${selectedSlugs.length} ${selectedSlugs.length === 1 ? 'interest' : 'interests'}`
+                : topics.length === 0
+                  ? 'Continue'
+                  : 'Select at least one interest'}
           </Text>
           <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
         </TouchableOpacity>
@@ -197,6 +214,29 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: GAP,
     rowGap: GAP,
+  },
+  loadingWrap: {
+    width: '100%',
+    paddingVertical: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#718096',
+  },
+  emptyWrap: {
+    width: '100%',
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#718096',
+    textAlign: 'center',
+    lineHeight: 24,
   },
   optionButton: {
     width: CARD_WIDTH,

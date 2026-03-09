@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ContentCategory, LearningCard, UserStats, CardFromAPI } from '../types';
-import { CONTENT_CATEGORIES } from '../constants/categories';
+import { categoryNameToSlug } from '../constants/categories';
 import { fetchCards, fetchProgress, fetchCategoryStats, markCardFinished, addBookmark, removeBookmark, updateCurrentUser, getCurrentUser } from '../api/serverActions';
 import { validateCards } from '../api/validateCards';
 
@@ -15,7 +15,7 @@ interface AppState {
   authToken: string | null;
   userAge: number | null;
   preferredLanguage: PreferredLanguage | null;
-  preferences: ContentCategory[];
+  preferences: string[]; // slugs from backend (e.g. 'dua', 'hadith', 'prophet-stories')
   hasCompletedOnboarding: boolean;
 
   loading: boolean;
@@ -32,10 +32,10 @@ interface AppState {
   stats: UserStats;
 
   /** Per-category total and completed from API progress/user-progress-stats (when logged in). */
-  categoryStats: Record<ContentCategory, { total: number; completed: number; image?: string }> | null;
+  categoryStats: Record<string, { total: number; completed: number; image?: string }> | null;
 
-  /** Raw categories from API keyed by slug (hadis, dua, prophet stories, quotes, etc.) for dynamic Collections. */
-  categoriesFromApi: Record<string, { total: number; completed: number; image?: string; backgroundColor?: string }> | null;
+  /** Raw categories from API keyed by slug (hadis, prophet-stories, etc.) for dynamic Collections. */
+  categoriesFromApi: Record<string, { total: number; completed: number; image?: string; backgroundColor?: string; categoryName?: string }> | null;
 
   /** Overview from progress/user-progress-stats: streak and consumed (total learnt). */
   statsOverview: { streak: number; consumed: number; topic: number } | null;
@@ -44,7 +44,7 @@ interface AppState {
   loadCategoryStats: () => Promise<void>;
   setAuth: (params: { token: string | null; email?: string | null }) => void;
   initSession: () => Promise<void>;
-  setPreferences: (categories: ContentCategory[]) => void;
+  setPreferences: (slugs: string[]) => void;
   setUserAge: (age: number) => void;
   setPreferredLanguage: (language: PreferredLanguage) => void;
   completeOnboarding: () => void;
@@ -59,17 +59,6 @@ interface AppState {
   getAvailableCards: () => LearningCard[];
   getBookmarkedCards: () => LearningCard[];
   updateStreak: () => void;
-}
-
-function normalizeCategoryStatsKey(key: string): ContentCategory | null {
-  const k = String(key).toLowerCase();
-  if (k === 'hadis' || k === 'hadith') return 'Hadis';
-  if (k === 'dua') return 'Dua';
-  if (k === 'prophet stories' || k === 'prophet_stories' || k === 'stories') return 'Prophet Stories';
-  if (k === 'quran surah' || k === 'quran_surah' || k === 'quran') return 'Quran Surah';
-  if (k === 'islamic facts' || k === 'islamic_facts' || k === 'facts') return 'Islamic Facts';
-  if (CONTENT_CATEGORIES.includes(key as ContentCategory)) return key as ContentCategory;
-  return null;
 }
 
 /** Convert API card shape to LearningCard (used by feed and bookmarks). */
@@ -148,24 +137,10 @@ export const useStore = create<AppState>()(
           if (me.success && me.data) {
             const backendPrefs = me.data.preferences ?? [];
             if (backendPrefs.length > 0) {
-              const mapped: ContentCategory[] = backendPrefs
-                .map((p) => {
-                  const v = String(p).toLowerCase();
-                  if (v === 'hadis' || v === 'hadith') return 'Hadis';
-                  if (v === 'dua') return 'Dua';
-                  if (v === 'prophet stories' || v === 'prophet_stories' || v === 'stories')
-                    return 'Prophet Stories';
-                  if (v === 'quran surah' || v === 'quran_surah' || v === 'quran')
-                    return 'Quran Surah';
-                  if (v === 'islamic facts' || v === 'islamic_facts' || v === 'facts')
-                    return 'Islamic Facts';
-                  return null;
-                })
-                .filter((x): x is ContentCategory => x !== null);
-
-              if (mapped.length > 0) {
+              const slugs = backendPrefs.filter((p): p is string => typeof p === 'string' && p.length > 0);
+              if (slugs.length > 0) {
                 set((state) => ({
-                  preferences: state.preferences.length ? state.preferences : mapped,
+                  preferences: state.preferences.length ? state.preferences : slugs,
                   hasCompletedOnboarding: true,
                 }));
               }
@@ -221,7 +196,7 @@ export const useStore = create<AppState>()(
           get().loadCategoryStats();
         }
         const state = get();
-        console.log('[loadContent] Done. allCards:', state.allCards.length, 'getAvailableCards would return:', state.preferences.length === 0 ? state.allCards.length : state.allCards.filter((c) => state.preferences.includes(c.category)).length);
+        console.log('[loadContent] Done. allCards:', state.allCards.length, 'getAvailableCards would return:', state.preferences.length === 0 ? state.allCards.length : state.allCards.filter((c) => state.preferences.includes(categoryNameToSlug(c.category))).length);
       },
 
       loadCategoryStats: async () => {
@@ -231,45 +206,48 @@ export const useStore = create<AppState>()(
           return;
         }
         const res = await fetchCategoryStats(token);
-        if (!res.success || !res.data?.categories) {
+        if (!res.success || !res.data) {
           set((state) => ({ categoryStats: state.categoryStats, categoriesFromApi: state.categoriesFromApi, statsOverview: state.statsOverview }));
           return;
         }
         const overview = res.data.overview;
-        const categoriesRaw: Record<string, { total: number; completed: number; image?: string; backgroundColor?: string }> = {};
-        Object.entries(res.data.categories).forEach(([key, value]) => {
-          if (!value) return;
-          const slug = String(key).trim();
-          const hexColor = typeof value.backgroundColor === 'string' && /^#[0-9A-Fa-f]{6}$/i.test(value.backgroundColor)
-            ? value.backgroundColor
-            : undefined;
-          categoriesRaw[slug] = {
-            total: value.total ?? 0,
-            completed: value.completed ?? 0,
-            image: typeof value.image === 'string' ? value.image : undefined,
-            backgroundColor: hexColor,
-          };
-        });
-        const mapped: Record<ContentCategory, { total: number; completed: number; image?: string }> = {
-          Hadis: { total: 0, completed: 0 },
-          Dua: { total: 0, completed: 0 },
-          'Prophet Stories': { total: 0, completed: 0 },
-          'Quran Surah': { total: 0, completed: 0 },
-          'Islamic Facts': { total: 0, completed: 0 },
-        };
-        Object.entries(res.data.categories).forEach(([key, value]) => {
-          if (!value) return;
-          const cat = normalizeCategoryStatsKey(key);
-          if (cat) {
-            mapped[cat] = {
+        const raw = res.data.categories;
+        const categoriesRaw: Record<string, { total: number; completed: number; image?: string; backgroundColor?: string; categoryName?: string }> = {};
+
+        if (Array.isArray(raw)) {
+          raw.forEach((item) => {
+            if (!item || typeof item.slug !== 'string') return;
+            const slug = String(item.slug).trim();
+            const hexColor = typeof item.backgroundColor === 'string' && /^#[0-9A-Fa-f]{6}$/i.test(item.backgroundColor)
+              ? item.backgroundColor
+              : undefined;
+            categoriesRaw[slug] = {
+              total: item.total ?? 0,
+              completed: item.completed ?? 0,
+              image: typeof item.image === 'string' ? item.image : undefined,
+              backgroundColor: hexColor,
+              categoryName: typeof item.categoryName === 'string' ? item.categoryName : undefined,
+            };
+          });
+        } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+          Object.entries(raw).forEach(([key, value]) => {
+            if (!value) return;
+            const slug = String(key).trim();
+            const hexColor = typeof value.backgroundColor === 'string' && /^#[0-9A-Fa-f]{6}$/i.test(value.backgroundColor)
+              ? value.backgroundColor
+              : undefined;
+            categoriesRaw[slug] = {
               total: value.total ?? 0,
               completed: value.completed ?? 0,
               image: typeof value.image === 'string' ? value.image : undefined,
+              backgroundColor: hexColor,
+              categoryName: typeof (value as any).categoryName === 'string' ? (value as any).categoryName : undefined,
             };
-          }
-        });
+          });
+        }
+
         set({
-          categoryStats: mapped,
+          categoryStats: null,
           categoriesFromApi: Object.keys(categoriesRaw).length > 0 ? categoriesRaw : null,
           statsOverview:
             overview &&
@@ -281,36 +259,23 @@ export const useStore = create<AppState>()(
         });
       },
 
-      setPreferences: (categories) => {
-        set({ preferences: categories });
+        setPreferences: (slugs) => {
+        set({ preferences: slugs });
         get().updateStreak();
 
-        // Sync user preferences (and age/language when available) to backend user profile.
         const token = get().authToken;
         if (token) {
           const state = get();
-
-          // Map frontend categories to backend preference slugs.
-          const prefSlugs = categories.map((c) => {
-            if (c === 'Hadis') return 'hadith';
-            if (c === 'Dua') return 'dua';
-            if (c === 'Prophet Stories') return 'stories';
-            if (c === 'Quran Surah') return 'quran_surah';
-            if (c === 'Islamic Facts') return 'islamic_facts';
-            return null;
-          }).filter((x): x is string => x !== null);
-
-          const language =
-            state.preferredLanguage === 'Hindi' ? 'hindi' : 'english';
-
           updateCurrentUser(
             {
               age: state.userAge ?? undefined,
-              language,
-              preferences: prefSlugs.length > 0 ? prefSlugs : undefined,
+              language: state.preferredLanguage === 'Hindi' ? 'hindi' : 'english',
+              preferences: slugs.length > 0 ? slugs : undefined,
             },
             token
-          ).catch((e) => {
+          ).then(() => {
+            get().loadCategoryStats();
+          }).catch((e) => {
             console.log('[setPreferences] Failed to sync user profile', e);
           });
         }
@@ -476,10 +441,10 @@ export const useStore = create<AppState>()(
       getAvailableCards: () => {
         const state = get();
         if (state.preferences.length === 0) return state.allCards;
-        const filtered = state.allCards.filter((card) =>
-          state.preferences.includes(card.category)
-        );
-        // If stored preferences don't match any card (e.g. old persisted values), show all cards
+        const filtered = state.allCards.filter((card) => {
+          const slug = categoryNameToSlug(card.category);
+          return state.preferences.includes(slug) || state.preferences.includes(card.category);
+        });
         if (filtered.length === 0 && state.allCards.length > 0) return state.allCards;
         return filtered;
       },

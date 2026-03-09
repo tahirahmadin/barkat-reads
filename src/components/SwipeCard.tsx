@@ -44,16 +44,9 @@ interface SwipeCardProps {
   isSaved?: boolean;
 }
 
-const getCategoryColor = (category: ContentCategory): string => {
-  const colors: Record<ContentCategory, string> = {
-    Hadis: '#8B5A3C',
-    Dua: '#8B6F47',
-    'Prophet Stories': '#5D4E37',
-    'Quran Surah': '#2C5F7A',
-    'Islamic Facts': '#27ae60',
-  };
-  return colors[category] ?? '#718096';
-};
+/** Use card color from API when valid hex; otherwise neutral fallback. */
+const resolveCardColor = (hex: string | undefined): string =>
+  hex && /^#[0-9A-Fa-f]{6}$/i.test(hex) ? hex : '#718096';
 
 /** Tag label for detail-only (hadis-style) cards: Hadis, Dua, Islamic Facts */
 const getDetailOnlyTag = (category: ContentCategory): string => {
@@ -188,7 +181,7 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
     })
   ).current;
 
-  const categoryColor = getCategoryColor(card.category);
+  const categoryColor = resolveCardColor(card.cardColor);
   /** Use backend image when available (string URL or number for require); else fallback to static assets. */
   const backendImage = card.image;
   const imageSource =
@@ -461,7 +454,7 @@ function DetailOnlyCardLayout({
       />
     </View>
   );
-  const bgColor = card.cardColor ?? categoryColor;
+  const bgColor = categoryColor;
   const tagLabel = getDetailOnlyTag(card.category);
   return (
     <View style={[hadisStyles.wrapper, { backgroundColor: bgColor }]}>

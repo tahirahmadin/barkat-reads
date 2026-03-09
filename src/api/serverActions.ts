@@ -548,6 +548,17 @@ export interface CategoryStatsByCategory {
   completed: number;
   image?: string;
   backgroundColor?: string;
+  categoryName?: string;
+}
+
+/** API can return categories as array (new) or record keyed by slug (legacy). */
+export interface CategoryStatsItem {
+  slug: string;
+  categoryName?: string;
+  total: number;
+  completed: number;
+  image?: string;
+  backgroundColor?: string;
 }
 
 export interface StatsOverview {
@@ -558,7 +569,8 @@ export interface StatsOverview {
 
 export interface CategoryStatsResponse {
   overview?: StatsOverview;
-  categories: Record<string, CategoryStatsByCategory>;
+  /** New API: array. Legacy: record keyed by slug. */
+  categories: CategoryStatsItem[] | Record<string, CategoryStatsByCategory>;
 }
 
 export interface FetchCategoryStatsResult {
@@ -589,6 +601,39 @@ export const fetchCategoryStats = async (
       e instanceof Error ? e.message : 'Failed to fetch category stats';
     console.log('[fetchCategoryStats] Error:', errMsg, e);
     return { success: false, error: errMsg };
+  }
+};
+
+/** GET same endpoint without auth – for onboarding topic list. Returns [] if backend requires auth. */
+export const fetchAvailableTopics = async (): Promise<{ slug: string; label: string }[]> => {
+  if (!API_BASE_URL) return [];
+  try {
+    const url = `${API_BASE_URL}/api/progress/user-progress-stats`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = (await res.json()) as CategoryStatsResponse;
+    const raw = data?.categories;
+    if (Array.isArray(raw)) {
+      return raw
+        .filter((item): item is CategoryStatsItem => item != null && typeof (item as CategoryStatsItem).slug === 'string')
+        .map((item) => ({
+          slug: (item as CategoryStatsItem).slug.trim(),
+          label: typeof (item as CategoryStatsItem).categoryName === 'string'
+            ? (item as CategoryStatsItem).categoryName!
+            : (item as CategoryStatsItem).slug.trim(),
+        }));
+    }
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      return Object.entries(raw).map(([slug, value]) => ({
+        slug: slug.trim(),
+        label: value && typeof (value as CategoryStatsByCategory).categoryName === 'string'
+          ? (value as CategoryStatsByCategory).categoryName!
+          : slug.trim(),
+      }));
+    }
+    return [];
+  } catch {
+    return [];
   }
 };
 

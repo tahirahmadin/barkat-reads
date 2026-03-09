@@ -13,7 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useStore } from '../store/useStore';
-import type { CardFromAPI, ContentCategory } from '../types';
+import type { CardFromAPI } from '../types';
+import { slugToDisplayName } from '../constants/categories';
 import { validateCards } from '../api/validateCards';
 import { fetchCompletedCardsByCategory } from '../api/serverActions';
 import { DetailReaderModal } from '../components/DetailReaderModal';
@@ -23,16 +24,6 @@ const PATTERN_IMG = require('../../assets/pattern.avif');
 type CompletedCategoryParams = {
   categorySlug: string;
   categoryLabel?: string;
-};
-
-const slugToCategory = (slug: string): ContentCategory => {
-  const v = slug.toLowerCase().replace(/-/g, ' ');
-  if (v === 'hadis' || v === 'hadith') return 'Hadis';
-  if (v === 'dua') return 'Dua';
-  if (v === 'prophet stories' || slug === 'prophet-stories' || slug === 'prophet_stories' || v === 'stories') return 'Prophet Stories';
-  if (v === 'quran surah' || slug === 'quran-surah' || slug === 'quran_surah' || v === 'quran') return 'Quran Surah';
-  if (v === 'islamic facts' || slug === 'islamic-facts' || slug === 'facts') return 'Islamic Facts';
-  return 'Islamic Facts';
 };
 
 export const CompletedCategoryScreen: React.FC = () => {
@@ -81,7 +72,7 @@ export const CompletedCategoryScreen: React.FC = () => {
     setSelectedCard(null);
   };
 
-  const title = categoryLabel || slugToCategory(categorySlug);
+  const title = categoryLabel ?? slugToDisplayName(categorySlug);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -154,7 +145,7 @@ export const CompletedCategoryScreen: React.FC = () => {
           cardId={selectedCard.id}
           title={selectedCard.title}
           content={selectedCard.content}
-          category={slugToCategory(categorySlug)}
+          category={slugToDisplayName(categorySlug)}
           onFinish={handleCloseModal}
           onClose={handleCloseModal}
         />

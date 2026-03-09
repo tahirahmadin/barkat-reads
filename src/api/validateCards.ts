@@ -1,8 +1,7 @@
 import type { CardFromAPI } from '../types';
-import { CONTENT_CATEGORIES } from '../constants/categories';
+import { normalizeCategoryDisplayName } from '../constants/categories';
 
 const VALID_CARD_TYPES = new Set(['flash_card', 'explain_card']);
-const DEFAULT_CATEGORY = 'Islamic Facts';
 const DEFAULT_CARD_TYPE = 'flash_card';
 
 /**
@@ -11,29 +10,7 @@ const DEFAULT_CARD_TYPE = 'flash_card';
  */
 export function validateCard(card: CardFromAPI): CardFromAPI {
   const rawCategory = typeof card.category === 'string' ? card.category : '';
-  const lower = rawCategory.toLowerCase();
-  let normalizedCategory: (typeof CONTENT_CATEGORIES)[number] = DEFAULT_CATEGORY;
-
-  if (lower === 'hadis' || lower === 'hadith') normalizedCategory = 'Hadis';
-  else if (lower === 'dua') normalizedCategory = 'Dua';
-  else if (lower === 'prophet stories' || lower === 'prophet_stories' || lower === 'stories')
-    normalizedCategory = 'Prophet Stories';
-  else if (lower === 'quran surah' || lower === 'quran_surah' || lower === 'quran')
-    normalizedCategory = 'Quran Surah';
-  else if (
-    lower === 'islamic facts' ||
-    lower === 'islamic_facts' ||
-    lower === 'facts'
-  )
-    normalizedCategory = 'Islamic Facts';
-  else if (
-    typeof card.category === 'string' &&
-    CONTENT_CATEGORIES.includes(card.category as (typeof CONTENT_CATEGORIES)[number])
-  ) {
-    normalizedCategory = card.category as (typeof CONTENT_CATEGORIES)[number];
-  }
-
-  const category = normalizedCategory;
+  const category = normalizeCategoryDisplayName(rawCategory);
   const cardType =
     typeof card.cardType === 'string' && VALID_CARD_TYPES.has(card.cardType)
       ? card.cardType

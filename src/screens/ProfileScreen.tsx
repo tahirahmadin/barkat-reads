@@ -13,14 +13,12 @@ import {
   Share,
   ImageBackground,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, CommonActions } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { StreakCelebrationModal } from '../components/StreakCelebrationModal';
-import { AppHeader } from '../components/AppHeader';
 import { PreferenceSelector } from '../components/PreferenceSelector';
 import { useStore } from '../store/useStore';
-import { CONTENT_CATEGORIES, type ContentCategory } from '../constants/categories';
 import { deleteAccount } from '../api/serverActions';
 
 const PADDING = 20;
@@ -46,46 +44,10 @@ const cardShadow = Platform.select({
   android: { elevation: 4 },
 });
 
-const getCategoryColor = (category: ContentCategory): string => {
-  const colors: Record<ContentCategory, string> = {
-    Hadis: '#0d9488',
-    Dua: '#8B6F47',
-    'Prophet Stories': '#7C3AED',
-    'Quran Surah': '#2C5F7A',
-    'Islamic Facts': '#D97706',
-  };
-  return colors[category] ?? '#5C6B67';
-};
-
-/** Solid (opaque) light background for category cards - same hue as getCategoryColor, no transparency. */
-const getCategoryCardBg = (category: ContentCategory): string => {
-  const solids: Record<ContentCategory, string> = {
-    Hadis: '#CCFBF1',
-    Dua: '#EDE4D8',
-    'Prophet Stories': '#EDE9FE',
-    'Quran Surah': '#D6E8ED',
-    'Islamic Facts': '#FEF3C7',
-  };
-  return solids[category] ?? '#E8EDEB';
-};
-
-const getCategoryIcon = (category: ContentCategory): keyof typeof Ionicons.glyphMap => {
-  const icons: Record<ContentCategory, string> = {
-    Hadis: 'book',
-    Dua: 'heart',
-    'Prophet Stories': 'time',
-    'Quran Surah': 'library',
-    'Islamic Facts': 'bulb',
-  };
-  return (icons[category] || 'bookmark') as keyof typeof Ionicons.glyphMap;
-};
-
-const categoryToSlug = (category: ContentCategory): string => {
-  if (category === 'Hadis') return 'hadis';
-  if (category === 'Dua') return 'dua';
-  if (category === 'Prophet Stories') return 'prophet-stories';
-  if (category === 'Quran Surah') return 'quran-surah';
-  return 'islamic-facts';
+/** More opaque card background from API hex (e.g. #8B6F47 -> tint). */
+const cardBgFromApiColor = (hex: string | undefined): string => {
+  if (hex && /^#[0-9A-Fa-f]{6}$/i.test(hex)) return `${hex}50`;
+  return '#E8EDEB';
 };
 
 export const ProfileScreen: React.FC = () => {
@@ -106,16 +68,17 @@ export const ProfileScreen: React.FC = () => {
     preferredLanguage,
     allCards,
     finishedDetailCardIds,
-    categoryStats,
+    categoriesFromApi,
     loadCategoryStats,
     statsOverview,
   } = useStore();
 
   const [preferencesModalVisible, setPreferencesModalVisible] = useState(false);
+  const insets = useSafeAreaInsets();
 
   React.useEffect(() => {
-    if (authToken && categoryStats === null) loadCategoryStats();
-  }, [authToken, categoryStats, loadCategoryStats]);
+    if (authToken && categoriesFromApi === null) loadCategoryStats();
+  }, [authToken, categoriesFromApi, loadCategoryStats]);
 
   const handleLogout = () => {
     logout();
@@ -156,11 +119,11 @@ export const ProfileScreen: React.FC = () => {
     setRefreshing(false);
   }, [loadCategoryStats]);
 
-  const handleTogglePreference = React.useCallback(
-    (category: ContentCategory) => {
-      const next = preferences.includes(category)
-        ? preferences.filter((c) => c !== category)
-        : [...preferences, category];
+  const handleToggleSlug = React.useCallback(
+    (slug: string) => {
+      const next = preferences.includes(slug)
+        ? preferences.filter((s) => s !== slug)
+        : [...preferences, slug];
       setPreferences(next);
     },
     [preferences, setPreferences]
@@ -170,39 +133,37 @@ export const ProfileScreen: React.FC = () => {
     setPreferencesModalVisible(false);
   }, []);
 
-  // Progress derived from store categoryStats (from API progress/user-progress-stats) when available, else from local cards
-  const contentProgressItems = CONTENT_CATEGORIES.map((category) => {
-    const backend = categoryStats?.[category];
-    const totalInCategory =
-      backend?.total ?? allCards.filter((c) => c.category === category).length;
-    const finishedInCategory =
-      backend?.completed ??
-      allCards.filter(
-        (c) => c.category === category && finishedDetailCardIds.includes(c.id)
-      ).length;
-    const learnedInCategory = allCards.filter(
-      (c) => c.category === category && learnedCardIds.includes(c.id)
-    ).length;
-    const topicColor = getCategoryColor(category);
-    const displayCount =
-      totalInCategory === 0 ? '—' : `${finishedInCategory} / ${totalInCategory}`;
-    const percent =
-      totalInCategory > 0
-        ? Math.round((finishedInCategory / totalInCategory) * 100)
-        : 0;
+  // Topic list from progress API only (no hardcoded list when logged in)
+  const topicOptions = React.useMemo(() => {
+    const fromApi = categoriesFromApi;
+    if (fromApi && Object.keys(fromApi).length > 0) {
+      return Object.entries(fromApi).map(([slug, data]) => ({
+        slug,
+        label: data.categoryName ?? slug,
+      }));
+    }
+    return [];
+  }, [categoriesFromApi]);
+
+  // My learnings: from backend categories only (slug, categoryName, total, completed, image, backgroundColor)
+  const contentProgressItems = Object.entries(categoriesFromApi ?? {}).map(([slug, data]) => {
+    const totalInCategory = data.total ?? 0;
+    const finishedInCategory = data.completed ?? 0;
+    const topicColor = data.backgroundColor && /^#[0-9A-Fa-f]{6}$/i.test(data.backgroundColor)
+      ? data.backgroundColor
+      : COLORS.brand;
+    const percent = totalInCategory > 0 ? Math.round((finishedInCategory / totalInCategory) * 100) : 0;
     return {
-      id: category,
-      label: category,
-      displayCount,
+      id: slug,
+      slug,
+      label: data.categoryName ?? slug,
+      displayCount: totalInCategory === 0 ? '—' : `${finishedInCategory} / ${totalInCategory}`,
       finishedInCategory,
       totalInCategory,
-      learnedInCategory,
       percent,
-      icon: getCategoryIcon(category),
-      image: backend?.image,
+      image: data.image,
       topicColor,
-      cardBg: `${topicColor}12`,
-      cardBgSolid: getCategoryCardBg(category),
+      cardBgSolid: cardBgFromApiColor(data.backgroundColor),
     };
   });
 
@@ -220,21 +181,8 @@ export const ProfileScreen: React.FC = () => {
     }).catch(() => { });
   }, [displayStreak]);
 
-  const streakMessage =
-    displayStreak > 0
-      ? "This is the longest streak you've ever had!"
-      : "Keep the flame lit—learn something today!";
-
-  // Badges: first 2 unlocked (streak >= 1, streak >= 7), next 2 locked
-  const streakBadges = [
-    { id: '1', unlocked: displayStreak >= 1, icon: 'flame' as const },
-    { id: '2', unlocked: displayStreak >= 7, icon: 'flash' as const },
-    { id: '3', unlocked: false, icon: 'rocket' as const },
-    { id: '4', unlocked: false, icon: 'trophy' as const },
-  ];
-
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
       <View style={styles.backgroundLayer} pointerEvents="none">
         <View style={styles.bgBase} />
         <View style={styles.bgPatternWrap}>
@@ -242,21 +190,9 @@ export const ProfileScreen: React.FC = () => {
         </View>
       </View>
       <View style={styles.contentLayer}>
-        <AppHeader
-          title="Profile"
-          rightComponent={
-            <TouchableOpacity
-              onPress={() => setPreferencesModalVisible(true)}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              style={styles.headerSettingsTouch}
-            >
-              <Ionicons name="settings-outline" size={24} color={COLORS.textPrimary} />
-            </TouchableOpacity>
-          }
-        />
         <ScrollView
-          style={styles.container}
-          contentContainerStyle={styles.content}
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -266,93 +202,39 @@ export const ProfileScreen: React.FC = () => {
             />
           }
         >
-          {/* Streak top section — light blue gradient, title + share, big number + flame, message, email, badges */}
-          <View style={styles.streakSection}>
-            <View style={styles.streakSectionGradient} pointerEvents="none" />
-            <View style={styles.streakHeader}>
-              <Text style={styles.streakSectionTitle}>Streak</Text>
+          {/* Top profile card — scrolls with content */}
+          <View style={[styles.topCard, { paddingTop: Math.max(insets.top, 12) + 16 }]}>
+            <View style={styles.topCardHeaderRow}>
+              <Text style={styles.topCardHeaderTitle}>Profile</Text>
               <TouchableOpacity
-                onPress={handleShareStreak}
+                onPress={() => setPreferencesModalVisible(true)}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                style={styles.streakShareTouch}
+                style={styles.headerSettingsTouch}
               >
-                <Ionicons name="share-outline" size={22} color={COLORS.textPrimary} />
+                <Ionicons name="settings-outline" size={24} color={COLORS.textPrimary} />
               </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={styles.streakMainBlock}
-              onPress={() => setStreakModalVisible(true)}
-              activeOpacity={0.95}
-            >
-              <View style={styles.streakNumberBlock}>
-                <Text style={styles.streakNumber}>{displayStreak}</Text>
-                <Text style={styles.streakDaysLabel}>Streak Days</Text>
+            <View style={styles.topCardRow}>
+              <View style={styles.topCardCorner}>
+                <Text style={styles.topCardCornerValue}>{displayStreak}</Text>
+                <Text style={styles.topCardCornerLabel}>Streak</Text>
               </View>
-              <View style={styles.streakFlameWrap}>
-                <Ionicons name="flame" size={64} color="#EA580C" />
-              </View>
-            </TouchableOpacity>
-            <Text style={styles.streakMessage}>{streakMessage}</Text>
-            <Text style={styles.streakEmail} numberOfLines={1}>{displayEmail}</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.streakBadgesRow}
-              style={styles.streakBadgesScroll}
-            >
-              {streakBadges.map((badge) => (
-                <View
-                  key={badge.id}
-                  style={[
-                    styles.streakBadge,
-                    badge.unlocked ? styles.streakBadgeActive : styles.streakBadgeLocked,
-                  ]}
-                >
-                  <Ionicons
-                    name={badge.icon}
-                    size={28}
-                    color={badge.unlocked ? '#EA580C' : COLORS.textMuted}
-                  />
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Stats — Streak, Learnt, Topics */}
-          <View style={styles.statsRow}>
-            <TouchableOpacity
-              style={[styles.statCardBase, styles.streakCard, cardShadow]}
-              onPress={() => setStreakModalVisible(true)}
-              activeOpacity={0.9}
-            >
-              <View style={styles.statCardGradientTop} pointerEvents="none" />
-              <View style={styles.statCardContent}>
-                <Text style={styles.statCardValue}>{displayStreak}</Text>
-                <Text style={styles.statCardLabel}>Streak</Text>
-              </View>
-              <View style={styles.statCardIconWrap} pointerEvents="none">
-                <Ionicons name="flame" size={48} color="#EA580C" />
-              </View>
-            </TouchableOpacity>
-            <View style={[styles.statCardBase, styles.learntCard, cardShadow]}>
-              <View style={[styles.statCardGradientTop, styles.learntCardGradient]} pointerEvents="none" />
-              <View style={styles.statCardContent}>
-                <Text style={styles.statCardValue}>{displayLearnt}</Text>
-                <Text style={styles.statCardLabel}>Learnt</Text>
-              </View>
-              <View style={styles.statCardIconWrap} pointerEvents="none">
-                <Ionicons name="book" size={48} color="#0d9488" />
+              <View style={[styles.topCardCorner, { alignItems: 'flex-end' }]}>
+                <Text style={styles.topCardCornerValue}>{displayLearnt}</Text>
+                <Text style={styles.topCardCornerLabel}>Learnt</Text>
               </View>
             </View>
-            <View style={[styles.statCardBase, styles.topicsCard, cardShadow]}>
-              <View style={[styles.statCardGradientTop, styles.topicsCardGradient]} pointerEvents="none" />
-              <View style={styles.statCardContent}>
-                <Text style={styles.statCardValue}>{displayTopics}</Text>
-                <Text style={styles.statCardLabel}>Topics</Text>
+            <View style={styles.topCardCenter}>
+              <View style={styles.avatarRing}>
+                <Image
+                  source={{ uri: `https://ui-avatars.com/api/?name=${encodeURIComponent(displayEmail.split('@')[0])}&background=5C4A3A&color=fff&size=192` }}
+                  style={styles.avatarImage}
+                />
               </View>
-              <View style={styles.statCardIconWrap} pointerEvents="none">
-                <Ionicons name="layers" size={48} color="#7C3AED" />
-              </View>
+              <Text style={styles.topCardName} numberOfLines={1}>
+                {displayEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+              </Text>
+              <Text style={styles.topCardEmail} numberOfLines={1}>{displayEmail}</Text>
             </View>
           </View>
 
@@ -365,7 +247,7 @@ export const ProfileScreen: React.FC = () => {
           />
 
           {/* My learnings — flat cards with image + progress bar */}
-          <View style={styles.section}>
+          <View style={[styles.section, { marginTop: 24 }]}>
             <Text style={styles.sectionTitle}>My learnings</Text>
             <View style={styles.progressList}>
               {contentProgressItems.map((item) => (
@@ -383,12 +265,12 @@ export const ProfileScreen: React.FC = () => {
                   ]}
                   onPress={() =>
                     (navigation as any).navigate('CompletedCategory', {
-                      categorySlug: categoryToSlug(item.id as ContentCategory),
+                      categorySlug: item.slug,
                       categoryLabel: item.label,
                     })
                   }
                 >
-                  <View style={[styles.flatCardImageWrap, { backgroundColor: `${item.topicColor}18` }]}>
+                  <View style={[styles.flatCardImageWrap, { backgroundColor: `${item.topicColor}40` }]}>
                     <Image
                       source={{ uri: item.image ?? DEFAULT_CATEGORY_IMAGE }}
                       style={styles.flatCardImage}
@@ -415,7 +297,7 @@ export const ProfileScreen: React.FC = () => {
                           <View
                             style={[
                               styles.progressBarFill,
-                              { width: `${item.percent}%` },
+                              { width: `${item.percent}%`, backgroundColor: item.topicColor },
                             ]}
                           />
                         </View>
@@ -489,9 +371,12 @@ export const ProfileScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
           <PreferenceSelector
-            selectedCategories={preferences}
-            onToggleCategory={handleTogglePreference}
+            topics={topicOptions}
+            selectedSlugs={preferences}
+            onToggleSlug={handleToggleSlug}
             onContinue={handleClosePreferencesModal}
+            loading={authToken != null && categoriesFromApi === null}
+            emptyMessage={topicOptions.length === 0 && categoriesFromApi !== null ? 'No topics from server.' : undefined}
           />
         </SafeAreaView>
       </Modal>
@@ -522,14 +407,93 @@ const styles = StyleSheet.create({
   },
   contentLayer: {
     flex: 1,
+    flexDirection: 'column',
   },
-  container: {
+  scrollView: {
     flex: 1,
   },
-  content: {
+  scrollContent: {
     paddingHorizontal: PADDING,
-    paddingTop: 16,
+    paddingTop: 0,
     paddingBottom: 100,
+  },
+  topCard: {
+    backgroundColor: 'rgba(139, 111, 71, 0.4)',
+    paddingBottom: 28,
+    paddingHorizontal: 24,
+    marginBottom: 0,
+    borderBottomLeftRadius: 72,
+    borderBottomRightRadius: 72,
+    overflow: 'hidden',
+    marginHorizontal: -PADDING,
+  },
+  topCardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  topCardHeaderTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    letterSpacing: -0.5,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  topCardRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 20,
+  },
+  topCardCorner: {
+    alignItems: 'flex-start',
+  },
+  topCardCornerValue: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  topCardCornerLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    marginTop: 2,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }),
+  },
+  topCardCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarRing: {
+    width: 96,
+    height: 96,
+    borderRadius: 32,
+    borderWidth: 3,
+    borderColor: 'rgba(0,0,0,0.15)',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 24,
+    backgroundColor: 'rgba(0,0,0,0.06)',
+  },
+  topCardName: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginBottom: 4,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  topCardEmail: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }),
   },
   streakSection: {
     marginBottom: 20,
@@ -602,30 +566,6 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginBottom: 14,
     ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }),
-  },
-  streakBadgesScroll: {
-    marginHorizontal: -18,
-  },
-  streakBadgesRow: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 18,
-  },
-  streakBadge: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-  },
-  streakBadgeActive: {
-    backgroundColor: '#BAE6FD',
-    borderColor: '#2563EB',
-  },
-  streakBadgeLocked: {
-    backgroundColor: COLORS.border,
-    borderColor: COLORS.textMuted,
   },
   statsRow: {
     flexDirection: 'row',
@@ -760,14 +700,14 @@ const styles = StyleSheet.create({
   progressBarTrack: {
     flex: 1,
     height: 5,
-    borderRadius: 3,
-    backgroundColor: '#B0BDB8',
+    borderRadius: 4,
+    backgroundColor: 'rgba(0,0,0,0.12)',
     overflow: 'hidden',
   },
   progressBarFill: {
     height: '100%',
-    borderRadius: 3,
-    minWidth: 0,
+    borderRadius: 4,
+    minWidth: 4,
     backgroundColor: COLORS.brand,
   },
   progressBarPercent: {
@@ -779,7 +719,7 @@ const styles = StyleSheet.create({
     ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
   },
   aboutCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: 'transparent',
     borderRadius: 20,
     padding: 18,
   },
@@ -829,7 +769,7 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 16,
     paddingHorizontal: 20,
-    backgroundColor: COLORS.surface,
+    backgroundColor: 'transparent',
     borderRadius: 20,
   },
   logoutButtonText: {

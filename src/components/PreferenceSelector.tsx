@@ -5,20 +5,30 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
-import { ContentCategory } from '../types';
-import { CONTENT_CATEGORIES, CONTENT_CATEGORY_LABELS } from '../constants/categories';
+
+export interface TopicOption {
+  slug: string;
+  label: string;
+}
 
 interface PreferenceSelectorProps {
-  selectedCategories: ContentCategory[];
-  onToggleCategory: (category: ContentCategory) => void;
+  topics: TopicOption[];
+  selectedSlugs: string[];
+  onToggleSlug: (slug: string) => void;
   onContinue: () => void;
+  loading?: boolean;
+  emptyMessage?: string;
 }
 
 export const PreferenceSelector: React.FC<PreferenceSelectorProps> = ({
-  selectedCategories,
-  onToggleCategory,
+  topics,
+  selectedSlugs,
+  onToggleSlug,
   onContinue,
+  loading = false,
+  emptyMessage,
 }) => {
   return (
     <View style={styles.container}>
@@ -28,40 +38,51 @@ export const PreferenceSelector: React.FC<PreferenceSelectorProps> = ({
       </Text>
 
       <ScrollView style={styles.topicsContainer}>
-        {CONTENT_CATEGORIES.map((category) => {
-          const isSelected = selectedCategories.includes(category);
-          return (
-            <TouchableOpacity
-              key={category}
-              style={[
-                styles.topicButton,
-                isSelected && styles.topicButtonSelected,
-              ]}
-              onPress={() => onToggleCategory(category)}
-            >
-              <Text
+        {loading ? (
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator size="large" color="#27ae60" />
+            <Text style={styles.loadingText}>Loading topics…</Text>
+          </View>
+        ) : emptyMessage && topics.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <Text style={styles.emptyText}>{emptyMessage}</Text>
+          </View>
+        ) : (
+          topics.map((topic) => {
+            const isSelected = selectedSlugs.includes(topic.slug);
+            return (
+              <TouchableOpacity
+                key={topic.slug}
                 style={[
-                  styles.topicText,
-                  isSelected && styles.topicTextSelected,
+                  styles.topicButton,
+                  isSelected && styles.topicButtonSelected,
                 ]}
+                onPress={() => onToggleSlug(topic.slug)}
               >
-                {CONTENT_CATEGORY_LABELS[category]}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+                <Text
+                  style={[
+                    styles.topicText,
+                    isSelected && styles.topicTextSelected,
+                  ]}
+                >
+                  {topic.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })
+        )}
       </ScrollView>
 
       <TouchableOpacity
         style={[
           styles.continueButton,
-          selectedCategories.length === 0 && styles.continueButtonDisabled,
+          selectedSlugs.length === 0 && styles.continueButtonDisabled,
         ]}
         onPress={onContinue}
-        disabled={selectedCategories.length === 0}
+        disabled={selectedSlugs.length === 0}
       >
         <Text style={styles.continueButtonText}>
-          Continue ({selectedCategories.length} selected)
+          Continue ({selectedSlugs.length} selected)
         </Text>
       </TouchableOpacity>
     </View>
@@ -90,6 +111,26 @@ const styles = StyleSheet.create({
   },
   topicsContainer: {
     flex: 1,
+  },
+  loadingWrap: {
+    paddingVertical: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#7f8c8d',
+  },
+  emptyWrap: {
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#7f8c8d',
+    textAlign: 'center',
   },
   topicButton: {
     backgroundColor: '#ffffff',
