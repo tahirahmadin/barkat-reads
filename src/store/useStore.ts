@@ -32,7 +32,10 @@ interface AppState {
   stats: UserStats;
 
   /** Per-category total and completed from API progress/user-progress-stats (when logged in). */
-  categoryStats: Record<ContentCategory, { total: number; completed: number }> | null;
+  categoryStats: Record<ContentCategory, { total: number; completed: number; image?: string }> | null;
+
+  /** Raw categories from API keyed by slug (hadis, dua, prophet stories, quotes, etc.) for dynamic Collections. */
+  categoriesFromApi: Record<string, { total: number; completed: number; image?: string; backgroundColor?: string }> | null;
 
   /** Overview from progress/user-progress-stats: streak and consumed (total learnt). */
   statsOverview: { streak: number; consumed: number; topic: number } | null;
@@ -74,6 +77,15 @@ export function cardFromAPIToLearningCard(card: CardFromAPI): LearningCard {
   const placement = card.iconPlacement === 'bottom' ? 'bottom' : 'top';
   const cardColor =
     typeof card.cardColor === 'string' && /^#[0-9A-Fa-f]{6}$/.test(card.cardColor) ? card.cardColor : undefined;
+  const titleInX =
+    card.titleInX === 'left' || card.titleInX === 'center' || card.titleInX === 'right'
+      ? card.titleInX
+      : 'center';
+  const titleInY =
+    card.titleInY === 'top' || card.titleInY === 'center' || card.titleInY === 'bottom'
+      ? card.titleInY
+      : 'center';
+  const titleSize = card.titleSize === 'big' || card.titleSize === 'normal' ? card.titleSize : 'normal';
   return {
     id: card.id,
     category: card.category as ContentCategory,
@@ -82,9 +94,13 @@ export function cardFromAPIToLearningCard(card: CardFromAPI): LearningCard {
     short_text: card.preview,
     full_text: card.content,
     reference: card.reference ?? '',
-    image: card.image ?? namazImage,
+    image: card.image ?? card.icon ?? namazImage,
     iconPlacement: placement,
     cardColor,
+    titleInX,
+    titleInY,
+    titleSize,
+    reads: card.reads,
   };
 }
 
@@ -114,6 +130,7 @@ export const useStore = create<AppState>()(
         topicsFollowed: 0,
       },
       categoryStats: null,
+      categoriesFromApi: null,
       statsOverview: null,
 
       setAuth: ({ token, email }) => {
@@ -210,16 +227,30 @@ export const useStore = create<AppState>()(
       loadCategoryStats: async () => {
         const token = get().authToken;
         if (!token) {
-          set({ categoryStats: null, statsOverview: null });
+          set({ categoryStats: null, categoriesFromApi: null, statsOverview: null });
           return;
         }
         const res = await fetchCategoryStats(token);
         if (!res.success || !res.data?.categories) {
-          set((state) => ({ categoryStats: state.categoryStats, statsOverview: state.statsOverview }));
+          set((state) => ({ categoryStats: state.categoryStats, categoriesFromApi: state.categoriesFromApi, statsOverview: state.statsOverview }));
           return;
         }
         const overview = res.data.overview;
-        const mapped: Record<ContentCategory, { total: number; completed: number }> = {
+        const categoriesRaw: Record<string, { total: number; completed: number; image?: string; backgroundColor?: string }> = {};
+        Object.entries(res.data.categories).forEach(([key, value]) => {
+          if (!value) return;
+          const slug = String(key).trim();
+          const hexColor = typeof value.backgroundColor === 'string' && /^#[0-9A-Fa-f]{6}$/i.test(value.backgroundColor)
+            ? value.backgroundColor
+            : undefined;
+          categoriesRaw[slug] = {
+            total: value.total ?? 0,
+            completed: value.completed ?? 0,
+            image: typeof value.image === 'string' ? value.image : undefined,
+            backgroundColor: hexColor,
+          };
+        });
+        const mapped: Record<ContentCategory, { total: number; completed: number; image?: string }> = {
           Hadis: { total: 0, completed: 0 },
           Dua: { total: 0, completed: 0 },
           'Prophet Stories': { total: 0, completed: 0 },
@@ -233,11 +264,13 @@ export const useStore = create<AppState>()(
             mapped[cat] = {
               total: value.total ?? 0,
               completed: value.completed ?? 0,
+              image: typeof value.image === 'string' ? value.image : undefined,
             };
           }
         });
         set({
           categoryStats: mapped,
+          categoriesFromApi: Object.keys(categoriesRaw).length > 0 ? categoriesRaw : null,
           statsOverview:
             overview &&
             typeof overview.streak === 'number' &&

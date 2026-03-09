@@ -1,39 +1,46 @@
 {
   "expo": {
-    "name": "Barkat Reads",
+    "name": "Barkat Daily",
     "slug": "barkat-learn",
-    "version": "1.0.0",
+    "version": "1.1.1",
     "orientation": "portrait",
-    "icon": "./assets/BarkatReads.png",
+    "icon": "./assets/barkat-daily.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/BarkatReads.png",
+      "image": "./assets/barkat-daily-trans.png",
       "resizeMode": "contain",
-      "backgroundColor": "#f2ede8"
+      "backgroundColor": "#063628"
     },
     "ios": {
       "bundleIdentifier": "com.barkat.reads",
       "supportsTablet": true,
-      "buildNumber": "1",
+      "buildNumber": "3",
       "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocationWhenInUseUsageDescription": "Barkat Learn uses your location to show accurate prayer times for your area."
+        "NSLocationWhenInUseUsageDescription": "Barkat Daily uses your location to show accurate prayer times for your area."
       }
     },
     "android": {
       "package": "com.barkat.reads",
       "versionCode": 1,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/BarkatReads.png",
-        "backgroundColor": "#f2ede8"
+        "foregroundImage": "./assets/barkat-daily.png",
+        "backgroundColor": "#063628"
       },
       "edgeToEdgeEnabled": true
     },
     "web": {
-      "favicon": "./assets/BarkatReads.png"
+      "favicon": "./assets/barkat-daily.png"
     },
     "plugins": [
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to save card images to your photos.",
+          "savePhotosPermission": "Allow $(PRODUCT_NAME) to save card images to your photos."
+        }
+      ],
       [
         "expo-build-properties",
         {

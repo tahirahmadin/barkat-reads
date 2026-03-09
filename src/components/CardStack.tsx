@@ -1,9 +1,52 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, StyleSheet, Text, Dimensions } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  Text,
+  Dimensions,
+  TouchableOpacity,
+  Platform,
+  Animated,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SwipeCard } from './SwipeCard';
 import { LearningCard } from '../types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+/** Animated "Swipe for next" bubble shown below the card deck */
+function SwipeHintBubble() {
+  const translateY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const bounce = Animated.loop(
+      Animated.sequence([
+        Animated.timing(translateY, {
+          toValue: -6,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(translateY, {
+          toValue: 0,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ]),
+      { resetBeforeIteration: true }
+    );
+    bounce.start();
+    return () => bounce.stop();
+  }, [translateY]);
+
+  return (
+    <Animated.View
+      style={[styles.swipeHintBubble, { transform: [{ translateY }] }]}
+    >
+      <Text style={styles.swipeHintText}>Swipe for next</Text>
+      <Ionicons name="arrow-up-outline" size={18} color="#4A5568" />
+    </Animated.View>
+  );
+}
 
 interface CardStackProps {
   cards: LearningCard[];
@@ -29,6 +72,7 @@ export const CardStack: React.FC<CardStackProps> = ({
   bookmarkedCardIds = [],
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [reachedEnd, setReachedEnd] = useState(false);
   const [containerHeight, setContainerHeight] = useState<number | undefined>(undefined);
 
   const prevCardIdsRef = useRef<string>('');
@@ -38,15 +82,27 @@ export const CardStack: React.FC<CardStackProps> = ({
     if (ids !== prevCardIdsRef.current) {
       prevCardIdsRef.current = ids;
       setCurrentIndex(0);
+      setReachedEnd(false);
     }
   }, [cards]);
 
   const moveToNextCard = useCallback(() => {
     setCurrentIndex((prev) => {
       if (cards.length === 0) return 0;
-      return (prev + 1) % cards.length;
+      const next = prev + 1;
+      if (next >= cards.length) {
+        setReachedEnd(true);
+        return prev;
+      }
+      return next;
     });
   }, [cards.length]);
+
+  const handleReadAgain = useCallback(() => {
+    setReachedEnd(false);
+    setCurrentIndex(0);
+    onReset?.();
+  }, [onReset]);
 
   const handleSwipeUp = useCallback(
     (card: LearningCard) => {
@@ -72,6 +128,25 @@ export const CardStack: React.FC<CardStackProps> = ({
         <Text style={styles.emptySubtext}>
           Please select your interests to see learning cards.
         </Text>
+      </View>
+    );
+  }
+
+  if (reachedEnd) {
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyIcon}>📭</Text>
+        <Text style={styles.emptyText}>No new cards</Text>
+        <Text style={styles.emptySubtext}>
+          You’ve seen all the cards in this batch. Tap below to read again from the start or pull to refresh for new content.
+        </Text>
+        <TouchableOpacity
+          style={styles.readAgainButton}
+          onPress={handleReadAgain}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.readAgainButtonText}>Read again</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -131,6 +206,7 @@ export const CardStack: React.FC<CardStackProps> = ({
           />
         )}
       </View>
+      <SwipeHintBubble />
     </View>
   );
 };
@@ -173,5 +249,37 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     marginBottom: 24,
     letterSpacing: 0.2,
+  },
+  readAgainButton: {
+    backgroundColor: '#063628',
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 14,
+    marginTop: 8,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6 },
+      android: { elevation: 3 },
+    }),
+  },
+  readAgainButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  swipeHintBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    gap: 6,
+    marginTop: 6,
+    marginBottom: 28,
+  },
+  swipeHintText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4A5568',
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
   },
 });

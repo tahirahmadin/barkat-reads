@@ -1,4 +1,4 @@
-# Barkat Reads - Islamic Micro-Learning App
+# Barkat Daily - Islamic Micro-Learning App
 
 A React Native + Expo mobile app for learning Islam through swipeable cards. Learn daily in just 5 minutes with bite-sized Islamic teachings tailored to your interests.
 
@@ -121,4 +121,3 @@ Each card contains:
 ## License
 
 MIT
-# barkat-reads

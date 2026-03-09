@@ -49,6 +49,16 @@ export function validateCard(card: CardFromAPI): CardFromAPI {
     card.iconPlacement === 'bottom' || card.iconPlacement === 'top' ? card.iconPlacement : undefined;
   const cardColor =
     typeof card.cardColor === 'string' && /^#[0-9A-Fa-f]{6}$/.test(card.cardColor) ? card.cardColor : undefined;
+  const titleInX =
+    card.titleInX === 'left' || card.titleInX === 'center' || card.titleInX === 'right'
+      ? card.titleInX
+      : 'center';
+  const titleInY =
+    card.titleInY === 'top' || card.titleInY === 'center' || card.titleInY === 'bottom'
+      ? card.titleInY
+      : 'center';
+  const titleSize =
+    card.titleSize === 'big' || card.titleSize === 'normal' ? card.titleSize : 'normal';
   return {
     id: card.id ?? '',
     category,
@@ -57,9 +67,12 @@ export function validateCard(card: CardFromAPI): CardFromAPI {
     preview: typeof card.preview === 'string' ? card.preview : '',
     content: typeof card.content === 'string' ? card.content : '',
     reference: card.reference,
-    image: card.image,
+    image: card.image ?? card.icon,
     iconPlacement,
     cardColor,
+    titleInX,
+    titleInY,
+    titleSize,
     isBookmarked: card.isBookmarked === true,
   };
 }

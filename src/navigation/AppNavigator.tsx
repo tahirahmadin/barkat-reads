@@ -4,6 +4,7 @@ import { NavigationContainer, CommonActions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { LandingScreen } from '../screens/LandingScreen';
 import { OnboardingAgeScreen } from '../screens/OnboardingAgeScreen';
@@ -36,7 +37,7 @@ const MainTabs = () => {
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#007AFF',
+        tabBarActiveTintColor: '#063628',
         tabBarInactiveTintColor: '#8E8E93',
         tabBarStyle: {
           position: 'absolute',
@@ -64,6 +65,16 @@ const MainTabs = () => {
           paddingHorizontal: 0,
         },
         tabBarShowLabel: true,
+        tabBarButton: (props) => (
+          <TouchableOpacity
+            {...props}
+            style={props.style}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              props.onPress?.();
+            }}
+          />
+        ),
       }}
     >
       <Tab.Screen
@@ -78,25 +89,19 @@ const MainTabs = () => {
               color={color}
             />
           ),
-          tabBarButton: (props) => (
-            <TouchableOpacity {...props} style={props.style} />
-          ),
         }}
       />
       <Tab.Screen
-        name="Library"
+        name="Collections"
         component={LibraryScreen}
         options={{
-          tabBarLabel: 'Library',
+          tabBarLabel: 'Collections',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
-              name={focused ? 'library' : 'library-outline'}
+              name={focused ? 'albums' : 'albums-outline'}
               size={24}
               color={color}
             />
-          ),
-          tabBarButton: (props) => (
-            <TouchableOpacity {...props} style={props.style} />
           ),
         }}
       />
@@ -112,9 +117,6 @@ const MainTabs = () => {
               color={color}
             />
           ),
-          tabBarButton: (props) => (
-            <TouchableOpacity {...props} style={props.style} />
-          ),
         }}
       />
       <Tab.Screen
@@ -129,9 +131,6 @@ const MainTabs = () => {
               color={color}
             />
           ),
-          tabBarButton: (props) => (
-            <TouchableOpacity {...props} style={props.style} />
-          ),
         }}
       />
       <Tab.Screen
@@ -145,9 +144,6 @@ const MainTabs = () => {
               size={24}
               color={color}
             />
-          ),
-          tabBarButton: (props) => (
-            <TouchableOpacity {...props} style={props.style} />
           ),
         }}
       />

@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Platform,
   Linking,
+  ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,24 +18,38 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppHeader } from '../components/AppHeader';
 
 const NAMAZ_LOCATION_KEY = 'barkat-namaz-location';
-
-const ROW_GAP = 12;
+const PATTERN_IMG = require('../../assets/pattern.avif');
 
 type PrayerKey = 'Fajr' | 'Dhuhr' | 'Asr' | 'Maghrib' | 'Isha';
 
 const PRAYER_CONFIG: { key: PrayerKey; label: string; icon: string; color: string }[] = [
-  { key: 'Fajr', label: 'Subuh', icon: 'moon-outline', color: '#7DD3FC' },
-  { key: 'Dhuhr', label: 'Dzuhur', icon: 'sunny-outline', color: '#FDE047' },
-  { key: 'Asr', label: 'Ashar', icon: 'partly-sunny-outline', color: '#FCD34D' },
-  { key: 'Maghrib', label: 'Maghrib', icon: 'moon-outline', color: '#93C5FD' },
-  { key: 'Isha', label: 'Isya', icon: 'moon-outline', color: '#6366F1' },
+  { key: 'Fajr', label: 'Fajr', icon: 'moon-outline', color: '#6B5B4F' },
+  { key: 'Dhuhr', label: 'Duhur', icon: 'sunny-outline', color: '#9B7E4B' },
+  { key: 'Asr', label: 'Asr', icon: 'partly-sunny-outline', color: '#A67C52' },
+  { key: 'Maghrib', label: 'Maghrib', icon: 'partly-sunny-outline', color: '#8B5A2B' },
+  { key: 'Isha', label: 'Isha', icon: 'moon-outline', color: '#5C4033' },
 ];
 
-// Sehri & Iftar row above prayer timings (same card width as grid)
-const SEHRI_IFTAR_ROW: { key: string; label: string; icon: string; color: string; timeKey: PrayerKey }[] = [
-  { key: 'Sehri', label: 'Sehri ends', icon: 'cafe-outline', color: '#A78BFA', timeKey: 'Fajr' },
-  { key: 'Iftar', label: 'Iftar', icon: 'restaurant-outline', color: '#FB923C', timeKey: 'Maghrib' },
+const SEHRI_IFTAR_ROW: { key: string; label: string; timeKey: PrayerKey }[] = [
+  { key: 'Suhoor', label: 'Suhoor', timeKey: 'Fajr' },
+  { key: 'Iftaar', label: 'Iftaar', timeKey: 'Maghrib' },
 ];
+
+// Brownish theme for Prayer Times screen
+const COLORS = {
+  brand: '#5C4033',
+  brandDark: '#3D2B20',
+  surface: '#FFFFFF',
+  background: '#F5F0EB',
+  cardSurface: '#FFFBF7',
+  textPrimary: '#2C2419',
+  textSecondary: '#5C5248',
+  textMuted: '#8B7D6F',
+  border: '#E0D6CC',
+  error: '#B91C1C',
+  errorBg: '#FEF2F2',
+  accent: '#8B6914',
+} as const;
 
 interface AladhanTimings {
   Fajr: string;
@@ -59,7 +74,6 @@ interface AladhanResponse {
 
 async function fetchPrayerTimes(lat: number, lon: number): Promise<AladhanResponse | null> {
   try {
-    // school=1 for Hanafi (Asr timing); method=2 Muslim World League is default
     const res = await fetch(
       `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&school=1`
     );
@@ -86,9 +100,20 @@ function getNextPrayer(timings: AladhanTimings): { key: PrayerKey; time: string;
       return { key, time: t, label: config?.label ?? key };
     }
   }
-  // Next is tomorrow Fajr
   const config = PRAYER_CONFIG[0];
-  return { key: 'Fajr', time: timings.Fajr, label: config?.label ?? 'Subuh' };
+  return { key: 'Fajr', time: timings.Fajr, label: config?.label ?? 'Fajr' };
+}
+
+function getCurrentPrayer(timings: AladhanTimings): { key: PrayerKey; time: string; label: string; endTime: string } | null {
+  const next = getNextPrayer(timings);
+  const order: PrayerKey[] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+  const idx = order.findIndex((k) => k === next?.key);
+  const currentKey = idx <= 0 ? order[order.length - 1] : order[idx - 1];
+  const currentTime = timings[currentKey];
+  const endTime = next?.time ?? currentTime;
+  if (!currentTime) return null;
+  const config = PRAYER_CONFIG.find((c) => c.key === currentKey);
+  return { key: currentKey, time: currentTime, label: config?.label ?? currentKey, endTime };
 }
 
 function formatTimeUntil(nextTime: string): string {
@@ -105,13 +130,18 @@ function formatTimeUntil(nextTime: string): string {
   return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 }
 
-async function loadStoredLocation(): Promise<{ cityName: string; lat: number; lon: number } | null> {
+async function loadStoredLocation(): Promise<{ cityName: string; address?: string; lat: number; lon: number } | null> {
   try {
     const raw = await AsyncStorage.getItem(NAMAZ_LOCATION_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (data && typeof data.cityName === 'string' && typeof data.lat === 'number' && typeof data.lon === 'number') {
-      return { cityName: data.cityName, lat: data.lat, lon: data.lon };
+      return {
+        cityName: data.cityName,
+        address: typeof data.address === 'string' ? data.address : undefined,
+        lat: data.lat,
+        lon: data.lon,
+      };
     }
     return null;
   } catch {
@@ -119,15 +149,48 @@ async function loadStoredLocation(): Promise<{ cityName: string; lat: number; lo
   }
 }
 
-async function saveLocation(cityName: string, lat: number, lon: number): Promise<void> {
+async function saveLocation(cityName: string, address: string | undefined, lat: number, lon: number): Promise<void> {
   try {
-    await AsyncStorage.setItem(NAMAZ_LOCATION_KEY, JSON.stringify({ cityName, lat, lon }));
-  } catch {}
+    await AsyncStorage.setItem(NAMAZ_LOCATION_KEY, JSON.stringify({ cityName, address, lat, lon }));
+  } catch { }
+}
+
+const cardShadow = Platform.select({
+  ios: { shadowColor: '#3D2B20', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 14 },
+  android: { elevation: 5 },
+});
+
+function formatTimeDisplay(t: string): string {
+  if (!t || t === '—') return '—';
+  const parts = t.split(':');
+  const h = Number(parts[0]);
+  const m = Number(parts[1] || 0);
+  if (Number.isNaN(h)) return '—';
+  const isPm = h >= 12;
+  const h12 = h % 12 || 12;
+  const mm = m.toString().padStart(2, '0');
+  return `${h12}:${mm} ${isPm ? 'pm' : 'am'}`;
+}
+
+function formatTimeDisplayCap(t: string): string {
+  const s = formatTimeDisplay(t);
+  return s.replace(/(am|pm)/, (_, p) => p === 'am' ? 'Am' : 'Pm');
+}
+
+function getMidDayTime(sunrise?: string, sunset?: string): string {
+  if (!sunrise || !sunset) return '—';
+  const [h1, m1] = sunrise.split(':').map(Number);
+  const [h2, m2] = sunset.split(':').map(Number);
+  const midMins = Math.floor(((h1 * 60 + m1) + (h2 * 60 + m2)) / 2);
+  const h = Math.floor(midMins / 60);
+  const m = midMins % 60;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 }
 
 export const NamazScreen: React.FC = () => {
   const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
   const [locationName, setLocationName] = useState<string>('Current location');
+  const [locationAddress, setLocationAddress] = useState<string | null>(null);
   const [timings, setTimings] = useState<AladhanTimings | null>(null);
   const [dateInfo, setDateInfo] = useState<AladhanResponse['data']['date'] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -165,11 +228,13 @@ export const NamazScreen: React.FC = () => {
 
       const [rev] = await Location.reverseGeocodeAsync({ latitude, longitude });
       const name = [rev?.city, rev?.region].filter(Boolean).join(', ') || 'Current location';
+      const address = [rev?.city, rev?.region, rev?.country].filter(Boolean).join(', ') || name;
       setLocationName(name);
-      await saveLocation(name, latitude, longitude);
+      setLocationAddress(address);
+      await saveLocation(name, address, latitude, longitude);
 
       await loadPrayerTimes(latitude, longitude);
-    } catch (e) {
+    } catch {
       setError('Unable to get location');
     } finally {
       setLoading(false);
@@ -186,6 +251,7 @@ export const NamazScreen: React.FC = () => {
       if (stored) {
         setLocation({ lat: stored.lat, lon: stored.lon });
         setLocationName(stored.cityName);
+        if (stored.address) setLocationAddress(stored.address);
         await loadPrayerTimes(stored.lat, stored.lon);
         setLoading(false);
         return;
@@ -210,20 +276,32 @@ export const NamazScreen: React.FC = () => {
   }, [fetchLocationAndTimes]);
 
   const nextPrayer = timings ? getNextPrayer(timings) : null;
+  const currentPrayer = timings ? getCurrentPrayer(timings) : null;
   const timeUntil = nextPrayer ? formatTimeUntil(nextPrayer.time) : '';
+  const midDayTime = timings ? getMidDayTime(timings.Sunrise, timings.Sunset) : '—';
 
   const openFindMosque = () => {
-    const url = 'https://www.google.com/maps/search/mosque+near+me';
-    Linking.openURL(url).catch(() => { });
+    Linking.openURL('https://www.google.com/maps/search/mosque+near+me').catch(() => { });
   };
 
   if (loading && !timings) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <AppHeader title="Prayer time" />
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#2D8659" />
-          <Text style={styles.loadingText}>Getting your location…</Text>
+        <View style={styles.backgroundLayer} pointerEvents="none">
+          <View style={styles.bgBase} />
+          <View style={styles.bgPatternWrap}>
+            <ImageBackground source={PATTERN_IMG} style={styles.bgPattern} resizeMode="repeat" />
+          </View>
+        </View>
+        <View style={styles.contentLayer}>
+          <AppHeader title="Prayer Times" />
+          <View style={styles.centered}>
+          <View style={styles.loaderRing}>
+            <ActivityIndicator size="large" color={COLORS.brand} />
+          </View>
+          <Text style={styles.loadingTitle}>Getting your location</Text>
+          <Text style={styles.loadingSub}>We’ll show prayer times for your area</Text>
+        </View>
         </View>
       </SafeAreaView>
     );
@@ -231,26 +309,30 @@ export const NamazScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <View style={styles.backgroundLayer} pointerEvents="none">
+        <View style={styles.bgBase} />
+        <View style={styles.bgPatternWrap}>
+          <ImageBackground source={PATTERN_IMG} style={styles.bgPattern} resizeMode="repeat" />
+        </View>
+      </View>
+      <View style={styles.contentLayer}>
       <AppHeader
-        title="Prayer time"
+        title="Prayer Times"
         rightComponent={
           <TouchableOpacity
-            style={styles.locationRow}
+            style={styles.locationChip}
             onPress={handleUpdateLocation}
             disabled={fetchingLocation}
             activeOpacity={0.7}
           >
             {fetchingLocation ? (
-              <>
-                <ActivityIndicator size="small" color="#64748B" />
-                <Text style={styles.locationText} numberOfLines={1}>Updating…</Text>
-              </>
+              <ActivityIndicator size="small" color={COLORS.brand} />
             ) : (
-              <>
-                <Ionicons name="location-outline" size={18} color="#64748B" />
-                <Text style={styles.locationText} numberOfLines={1}>{locationName}</Text>
-              </>
+              <Ionicons name="location" size={14} color={COLORS.brand} />
             )}
+            <Text style={styles.locationChipText} numberOfLines={1}>
+              {fetchingLocation ? 'Updating…' : locationName}
+            </Text>
           </TouchableOpacity>
         }
       />
@@ -259,88 +341,136 @@ export const NamazScreen: React.FC = () => {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#2D8659" />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.brand} />
         }
       >
         {error ? (
           <View style={styles.errorCard}>
-            <Ionicons name="warning-outline" size={24} color="#DC2626" />
+            <View style={styles.errorIconWrap}>
+              <Ionicons name="location-outline" size={28} color={COLORS.error} />
+            </View>
+            <Text style={styles.errorTitle}>Location needed</Text>
             <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={() => { setLoading(true); fetchLocationAndTimes(); }}>
-              <Text style={styles.retryButtonText}>Retry</Text>
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={() => { setLoading(true); fetchLocationAndTimes(); }}
+            >
+              <Text style={styles.retryButtonText}>Try again</Text>
             </TouchableOpacity>
           </View>
         ) : timings && dateInfo ? (
           <>
-            {/* Date & next prayer card */}
-            <View style={styles.heroCard}>
-              <View style={styles.heroLeft}>
+            {/* Date header — no arrows */}
+            <View style={styles.dateHeader}>
+              <View style={styles.dateCenter}>
                 <Text style={styles.hijriDate}>
-                  {dateInfo.hijri.month.en} {dateInfo.hijri.day}
+                  {dateInfo.hijri.day} {dateInfo.hijri.month.en}, {dateInfo.hijri.year}
                 </Text>
                 <Text style={styles.gregorianDate}>
                   {dateInfo.gregorian.weekday.en}, {dateInfo.gregorian.month.en} {dateInfo.gregorian.day} {dateInfo.gregorian.year}
                 </Text>
               </View>
-              {nextPrayer && (
-                <View style={styles.nextPrayerBadge}>
-                  <Text style={styles.nextPrayerLabel}>{nextPrayer.label}</Text>
-                  <Text style={styles.nextPrayerTime}>{nextPrayer.time}</Text>
-                </View>
-              )}
             </View>
 
-            {/* Reminder bar */}
-            {nextPrayer && (
-              <View style={styles.reminderBar}>
-                <Ionicons name="time-outline" size={18} color="#FFFFFF" />
-                <Text style={styles.reminderText}>
-                  {nextPrayer.label} in {timeUntil}, get ready for prayer.
+            {/* Now time + Next prayer — two cards */}
+            <View style={styles.heroRow}>
+              <View style={[styles.heroCardNow, cardShadow]}>
+                <Text style={styles.heroSmallLabel}>Now time is</Text>
+                <Text style={styles.heroPrayerName}>{currentPrayer?.label ?? '—'}</Text>
+                <Text style={styles.heroBigTime}>
+                  {currentPrayer ? formatTimeDisplayCap(currentPrayer.time) : '—'}
+                </Text>
+                <Text style={styles.heroEndTime}>
+                  End time – {currentPrayer ? formatTimeDisplay(currentPrayer.endTime) : '—'}
                 </Text>
               </View>
-            )}
+              <View style={[styles.heroCardNext, cardShadow]}>
+                <Text style={styles.heroSmallLabel}>Next prayer is</Text>
+                <Text style={styles.heroPrayerName}>{nextPrayer?.label ?? '—'}</Text>
+                <Text style={styles.heroBigTime}>
+                  {nextPrayer ? formatTimeDisplayCap(nextPrayer.time) : '—'}
+                </Text>
+                <Text style={styles.heroAzanRow}>Azan – {nextPrayer ? formatTimeDisplay(nextPrayer.time) : '—'}</Text>
+              </View>
+            </View>
 
-            {/* Find nearest mosque */}
-            <TouchableOpacity style={styles.mosqueButton} onPress={openFindMosque} activeOpacity={0.8}>
-              <Ionicons name="business-outline" size={24} color="#2D8659" />
-              <Text style={styles.mosqueButtonText}>Find nearest mosque</Text>
-              <Ionicons name="chevron-forward" size={20} color="#64748B" />
-            </TouchableOpacity>
-
-            {/* Sehri & Iftar — one row */}
-            <Text style={styles.sectionTitle}>Sehri & Iftar</Text>
-            <View style={styles.sehriIftarRow}>
-              {SEHRI_IFTAR_ROW.map((row) => (
-                <View key={row.key} style={styles.sehriIftarCard}>
-                  <View style={[styles.sehriIftarIconWrap, { backgroundColor: row.color + '28' }]}>
-                    <Ionicons name={row.icon as any} size={26} color={row.color} />
-                  </View>
-                  <Text style={styles.sehriIftarLabel}>{row.label}</Text>
-                  <Text style={styles.sehriIftarTime}>{timings[row.timeKey] || '—'}</Text>
+            {/* Suhoor / Iftaar single card */}
+            <View style={[styles.suhoorIftaarCard, cardShadow]}>
+              <View style={styles.suhoorIftaarLeft}>
+                <View style={styles.bellIconWrap}>
+                  <Ionicons name="moon-outline" size={18} color={COLORS.accent} />
                 </View>
-              ))}
+                <View>
+                  <Text style={styles.suhoorIftaarLabel}>Suhoor</Text>
+                  <Text style={styles.suhoorIftaarTime}>{timings?.Fajr ? formatTimeDisplay(timings.Fajr) : '—'}</Text>
+                </View>
+              </View>
+              <View style={styles.suhoorIftaarDivider} />
+              <View style={styles.suhoorIftaarRight}>
+                <View>
+                  <Text style={styles.suhoorIftaarLabel}>Iftaar</Text>
+                  <Text style={styles.suhoorIftaarTime}>{timings?.Maghrib ? formatTimeDisplay(timings.Maghrib) : '—'}</Text>
+                </View>
+                <View style={[styles.bellIconWrap, styles.bellIconMuted]}>
+                  <Ionicons name="restaurant-outline" size={18} color={COLORS.textMuted} />
+                </View>
+              </View>
             </View>
 
-            {/* Five daily prayers — single section */}
-            <Text style={styles.sectionTitle}>Daily prayers</Text>
-            <View style={styles.prayerSection}>
-              {PRAYER_CONFIG.map((p, index) => (
-                <React.Fragment key={p.key}>
-                  {index > 0 && <View style={styles.prayerDivider} />}
-                  <View style={styles.prayerRow}>
-                    <View style={[styles.prayerRowIconWrap, { backgroundColor: p.color + '22' }]}>
-                      <Ionicons name={p.icon as any} size={22} color={p.color} />
+            {/* Location + Prayer list card */}
+            <View style={[styles.locationCard, cardShadow]}>
+              <TouchableOpacity
+                style={styles.locationHeader}
+                onPress={handleUpdateLocation}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="location" size={20} color={COLORS.textPrimary} />
+                <View style={styles.locationTextWrap}>
+                  <Text style={styles.locationTitle}>Namaz Timings</Text>
+                  <Text style={styles.locationSub}>
+                    {fetchingLocation ? 'Updating…' : (locationAddress || 'Tap to update location')}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+              {PRAYER_CONFIG.map((p) => {
+                const isCurrent = nextPrayer?.key === p.key;
+                return (
+                  <View key={p.key} style={[styles.prayerListRow, isCurrent && styles.prayerListRowHighlight]}>
+                    <View style={styles.prayerListIconWrap}>
+                      <Ionicons name={p.icon as any} size={20} color={isCurrent ? COLORS.accent : COLORS.textSecondary} />
                     </View>
-                    <Text style={styles.prayerRowLabel}>{p.label}</Text>
-                    <Text style={styles.prayerRowTime}>{timings[p.key] || '—'}</Text>
+                    <Text style={[styles.prayerListLabel, isCurrent && styles.prayerListLabelHighlight]}>{p.label}</Text>
+                    <Text style={[styles.prayerListTime, isCurrent && styles.prayerListTimeHighlight]}>
+                      {timings[p.key] ? formatTimeDisplay(timings[p.key]) : '—'}
+                    </Text>
                   </View>
-                </React.Fragment>
-              ))}
+                );
+              })}
             </View>
-            <Text style={styles.footnote}>Hanafi (Asr) • Muslim World League</Text>
+
+            {/* Sunrise / Mid Day / Sunset */}
+            <View style={[styles.sunCard, cardShadow]}>
+              <View style={styles.sunBlock}>
+                <Text style={styles.sunLabel}>Sunrise</Text>
+                <Text style={styles.sunTime}>{timings?.Sunrise ? formatTimeDisplay(timings.Sunrise) : '—'}</Text>
+              </View>
+              <View style={styles.sunDivider} />
+              <View style={styles.sunBlock}>
+                <Text style={styles.sunLabel}>Mid Day</Text>
+                <Text style={styles.sunTime}>{midDayTime !== '—' ? formatTimeDisplay(midDayTime) : '—'}</Text>
+              </View>
+              <View style={styles.sunDivider} />
+              <View style={styles.sunBlock}>
+                <Text style={styles.sunLabel}>Sunset</Text>
+                <Text style={styles.sunTime}>{timings?.Sunset ? formatTimeDisplay(timings.Sunset) : '—'}</Text>
+              </View>
+            </View>
+
+            <Text style={styles.footnote}>Hanafi (Asr) · Muslim World League</Text>
           </>
         ) : null}
       </ScrollView>
+      </View>
     </SafeAreaView>
   );
 };
@@ -348,226 +478,526 @@ export const NamazScreen: React.FC = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f2ede8',
+    backgroundColor: '#e0d8ce',
   },
-  container: {
+  backgroundLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  bgBase: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#e6dfd6',
+  },
+  bgPatternWrap: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.05,
+  },
+  bgPattern: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  contentLayer: {
     flex: 1,
   },
+  container: { flex: 1 },
   content: {
-    paddingHorizontal: 24,
-    paddingTop: 16,
+    paddingHorizontal: 20,
+    paddingTop: 20,
     paddingBottom: 100,
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    padding: 32,
   },
-  loadingText: {
-    marginTop: 12,
+  loaderRing: {
+    marginBottom: 20,
+  },
+  loadingTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginBottom: 6,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  loadingSub: {
     fontSize: 15,
-    color: '#64748B',
+    color: COLORS.textSecondary,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }),
   },
-  locationRow: {
+  locationChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    maxWidth: 140,
+    maxWidth: 160,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: COLORS.brand + '12',
+    borderRadius: 20,
   },
-  locationText: {
+  locationChipText: {
     fontSize: 13,
-    color: '#64748B',
+    fontWeight: '600',
+    color: COLORS.brand,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
   },
   errorCard: {
-    backgroundColor: '#FEF2F2',
-    borderRadius: 12,
-    padding: 20,
+    backgroundColor: COLORS.errorBg,
+    borderRadius: 20,
+    padding: 28,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#FECACA',
   },
+  errorIconWrap: {
+    marginBottom: 12,
+  },
+  errorTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: COLORS.error,
+    marginBottom: 4,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
   errorText: {
-    marginTop: 8,
     fontSize: 15,
-    color: '#DC2626',
+    color: COLORS.textSecondary,
+    marginBottom: 16,
+    textAlign: 'center',
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }),
   },
   retryButton: {
-    marginTop: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    backgroundColor: '#DC2626',
-    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    backgroundColor: COLORS.error,
+    borderRadius: 12,
   },
   retryButtonText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: COLORS.surface,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
   },
   heroCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 12,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
-      android: { elevation: 3 },
-    }),
+    backgroundColor: COLORS.brand,
+    borderRadius: 20,
+    padding: 22,
+    marginBottom: 18,
+    overflow: 'hidden',
   },
-  heroLeft: {},
-  hijriDate: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1A202C',
-  },
-  gregorianDate: {
-    fontSize: 13,
-    color: '#64748B',
-    marginTop: 4,
-  },
-  nextPrayerBadge: {
-    backgroundColor: '#2D8659',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  nextPrayerLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  nextPrayerTime: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    marginTop: 2,
-  },
-  reminderBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#1A202C',
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+  heroTop: {
     marginBottom: 16,
   },
-  reminderText: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    fontWeight: '500',
-    flex: 1,
+  dateHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 4,
   },
-  mosqueButton: {
+  dateCenter: {
+    alignItems: 'center',
+  },
+  hijriDate: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  gregorianDate: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginTop: 4,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }),
+  },
+  heroRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  heroCardNow: {
+    flex: 1,
+    backgroundColor: COLORS.cardSurface,
+    borderRadius: 20,
+    padding: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  heroCardNext: {
+    flex: 1,
+    backgroundColor: COLORS.cardSurface,
+    borderRadius: 20,
+    padding: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  heroSmallLabel: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginBottom: 4,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }),
+  },
+  heroPrayerName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.accent,
+    marginBottom: 6,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  heroBigTime: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    letterSpacing: -0.5,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  heroEndTime: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginTop: 6,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }),
+  },
+  heroAzanRow: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginTop: 6,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }),
+  },
+  suhoorIftaarCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
-    gap: 12,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4 },
-      android: { elevation: 2 },
-    }),
+    backgroundColor: COLORS.cardSurface,
+    borderRadius: 20,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  mosqueButtonText: {
+  suhoorIftaarLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  suhoorIftaarRight: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  suhoorIftaarDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: COLORS.border,
+  },
+  suhoorIftaarLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  suhoorIftaarTime: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    marginTop: 2,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  bellIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3 }, android: { elevation: 2 } }),
+  },
+  bellIconMuted: {
+    opacity: 0.7,
+  },
+  bellIconWrapSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bellIconWrapActive: {
+    backgroundColor: COLORS.accent + '18',
+  },
+  locationCard: {
+    backgroundColor: COLORS.cardSurface,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  locationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 12,
+  },
+  locationTextWrap: { flex: 1 },
+  locationTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  locationSub: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    marginTop: 2,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }),
+  },
+  prayerListRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    gap: 12,
+  },
+  prayerListRowHighlight: {
+    backgroundColor: COLORS.accent + '0C',
+    marginHorizontal: -20,
+    paddingHorizontal: 20,
+  },
+  prayerListIconWrap: {
+    width: 28,
+    alignItems: 'center',
+  },
+  prayerListLabel: {
     flex: 1,
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A202C',
+    color: COLORS.textPrimary,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
   },
-  sectionTitle: {
-    fontSize: 13,
+  prayerListLabelHighlight: {
+    color: COLORS.accent,
+    fontWeight: '700',
+  },
+  prayerListTime: {
+    fontSize: 15,
     fontWeight: '600',
-    color: '#64748B',
-    marginBottom: 10,
+    color: COLORS.textSecondary,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  prayerListTimeHighlight: {
+    color: COLORS.accent,
+    fontWeight: '700',
+  },
+  sunCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  sunBlock: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  sunLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+    marginBottom: 4,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  sunTime: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  sunDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: COLORS.border,
+  },
+  nextPrayerBlock: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 14,
+    padding: 16,
+  },
+  nextPrayerLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.85)',
+    letterSpacing: 0.5,
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    marginBottom: 6,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  nextPrayerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: 8,
+  },
+  nextPrayerName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: COLORS.surface,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  nextPrayerTime: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: COLORS.surface,
+    letterSpacing: -0.5,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  countdownPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    backgroundColor: COLORS.surface,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  countdownText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.brand,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  mosqueCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 22,
+    gap: 14,
+  },
+  mosqueIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: COLORS.brand + '14',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mosqueTextWrap: { flex: 1 },
+  mosqueTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  mosqueSub: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    marginTop: 2,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }),
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textMuted,
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    marginBottom: 14,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
   },
   sehriIftarRow: {
     flexDirection: 'row',
-    gap: ROW_GAP,
+    gap: 14,
     marginBottom: 24,
   },
   sehriIftarCard: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 18,
     alignItems: 'center',
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
-      android: { elevation: 2 },
-    }),
   },
   sehriIftarIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 50,
+    height: 50,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   sehriIftarLabel: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#1A202C',
+    color: COLORS.textPrimary,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
   },
   sehriIftarTime: {
-    fontSize: 18,
+    fontSize: 19,
     fontWeight: '800',
-    color: '#2D8659',
-    marginTop: 4,
+    color: COLORS.brand,
+    marginTop: 6,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
   },
-  prayerSection: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    paddingVertical: 4,
+  prayerCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    paddingVertical: 6,
     overflow: 'hidden',
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
-      android: { elevation: 2 },
-    }),
   },
   prayerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
+  },
+  prayerRowHighlight: {
+    backgroundColor: COLORS.brand + '08',
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.brand,
+    marginLeft: 0,
+    paddingLeft: 15,
   },
   prayerDivider: {
     height: 1,
-    backgroundColor: '#F1F5F9',
-    marginHorizontal: 16,
+    backgroundColor: COLORS.border,
+    marginHorizontal: 18,
   },
-  prayerRowIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  prayerIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 14,
   },
-  prayerRowLabel: {
+  prayerLabel: {
     flex: 1,
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A202C',
+    color: COLORS.textPrimary,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
   },
-  prayerRowTime: {
-    fontSize: 17,
+  prayerTime: {
+    fontSize: 16,
     fontWeight: '700',
-    color: '#2D8659',
+    color: COLORS.textSecondary,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  prayerTimeHighlight: {
+    color: COLORS.brand,
+    fontWeight: '800',
   },
   footnote: {
     fontSize: 11,
-    color: '#94A3B8',
-    marginTop: 8,
-    marginBottom: 8,
+    color: COLORS.textMuted,
+    marginTop: 14,
+    textAlign: 'center',
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }),
   },
 });

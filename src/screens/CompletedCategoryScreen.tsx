@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Platform,
+  ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -17,17 +18,20 @@ import { validateCards } from '../api/validateCards';
 import { fetchCompletedCardsByCategory } from '../api/serverActions';
 import { DetailReaderModal } from '../components/DetailReaderModal';
 
+const PATTERN_IMG = require('../../assets/pattern.avif');
+
 type CompletedCategoryParams = {
   categorySlug: string;
   categoryLabel?: string;
 };
 
 const slugToCategory = (slug: string): ContentCategory => {
-  const v = slug.toLowerCase();
+  const v = slug.toLowerCase().replace(/-/g, ' ');
   if (v === 'hadis' || v === 'hadith') return 'Hadis';
   if (v === 'dua') return 'Dua';
-  if (v === 'prophet stories' || v === 'prophet_stories' || v === 'stories') return 'Prophet Stories';
-  if (v === 'quran surah' || v === 'quran_surah' || v === 'quran') return 'Quran Surah';
+  if (v === 'prophet stories' || slug === 'prophet-stories' || slug === 'prophet_stories' || v === 'stories') return 'Prophet Stories';
+  if (v === 'quran surah' || slug === 'quran-surah' || slug === 'quran_surah' || v === 'quran') return 'Quran Surah';
+  if (v === 'islamic facts' || slug === 'islamic-facts' || slug === 'facts') return 'Islamic Facts';
   return 'Islamic Facts';
 };
 
@@ -81,6 +85,13 @@ export const CompletedCategoryScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <View style={styles.backgroundLayer} pointerEvents="none">
+        <View style={styles.bgBase} />
+        <View style={styles.bgPatternWrap}>
+          <ImageBackground source={PATTERN_IMG} style={styles.bgPattern} resizeMode="repeat" />
+        </View>
+      </View>
+      <View style={styles.contentLayer}>
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
@@ -124,7 +135,9 @@ export const CompletedCategoryScreen: React.FC = () => {
                 {card.preview}
               </Text>
               {card.reference ? (
-                <Text style={styles.cardReference}>{card.reference}</Text>
+                <Text style={styles.cardReference}>
+                  ~ {card.reference.trim().toUpperCase()} ~
+                </Text>
               ) : null}
               <View style={styles.cardFooter}>
                 <Text style={styles.cardFooterText}>Tap to read</Text>
@@ -134,6 +147,7 @@ export const CompletedCategoryScreen: React.FC = () => {
           ))
         )}
       </ScrollView>
+      </View>
       {selectedCard && (
         <DetailReaderModal
           visible={modalVisible}
@@ -152,7 +166,26 @@ export const CompletedCategoryScreen: React.FC = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f2ede8',
+    backgroundColor: '#e0d8ce',
+  },
+  backgroundLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  bgBase: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#e6dfd6',
+  },
+  bgPatternWrap: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.05,
+  },
+  bgPattern: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  contentLayer: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',

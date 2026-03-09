@@ -10,13 +10,19 @@ import {
   Image,
   ActivityIndicator,
   Platform,
+  Alert,
 } from 'react-native';
+import { captureRef } from 'react-native-view-shot';
+import * as MediaLibrary from 'expo-media-library';
 import { Ionicons } from '@expo/vector-icons';
 import type { LearningCard, ContentCategory } from '../types';
 import { DetailReaderModal } from './DetailReaderModal';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SWIPE_THRESHOLD = 100;
+/** Flash card: illustration width ≈ 90% of card, aspect ratio 2:1 (width : height). */
+const FLASH_ILLUSTRATION_WIDTH = Math.round((SCREEN_WIDTH - 40));
+const FLASH_ILLUSTRATION_HEIGHT = Math.round(FLASH_ILLUSTRATION_WIDTH / 2);
 
 /** Static assets for cards (use backend images later). */
 const FLASH_CARD_ICON = require('../../assets/learn/icon.webp');
@@ -61,17 +67,6 @@ const getDetailOnlyTag = (category: ContentCategory): string => {
   return tags[category] ?? category.toUpperCase();
 };
 
-const getCategoryIconName = (category: ContentCategory): keyof typeof Ionicons.glyphMap => {
-  const icons: Record<ContentCategory, string> = {
-    Hadis: 'book',
-    Dua: 'heart',
-    'Prophet Stories': 'time',
-    'Quran Surah': 'library',
-    'Islamic Facts': 'bulb',
-  };
-  return (icons[category] || 'bookmark') as keyof typeof Ionicons.glyphMap;
-};
-
 export const SwipeCard: React.FC<SwipeCardProps> = ({
   card,
   onSwipeUp,
@@ -93,12 +88,38 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
   const [imageLoading, setImageLoading] = useState(false);
   const [showFullScreen, setShowFullScreen] = useState(false);
   const [showSavedFeedback, setShowSavedFeedback] = useState(false);
+  const [showDownloadFeedback, setShowDownloadFeedback] = useState(false);
+  const cardContentRef = useRef<View>(null);
   const modalOpenRef = useRef(false);
 
   const handleBookmarkPress = () => {
     onSave?.(card.id);
     setShowSavedFeedback(true);
     setTimeout(() => setShowSavedFeedback(false), 1500);
+  };
+
+  const handleDownloadPress = async () => {
+    if (!cardContentRef.current) return;
+    try {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission needed',
+          'Please allow access to your photos to save the card image.'
+        );
+        return;
+      }
+      const uri = await captureRef(cardContentRef, {
+        format: 'png',
+        quality: 1,
+        result: 'tmpfile',
+      });
+      await MediaLibrary.createAssetAsync(uri);
+      setShowDownloadFeedback(true);
+      setTimeout(() => setShowDownloadFeedback(false), 2000);
+    } catch (e) {
+      Alert.alert('Could not save', 'Failed to save the card image. Please try again.');
+    }
   };
   const pan = useRef(new Animated.ValueXY()).current;
   const scale = useRef(new Animated.Value(1)).current;
@@ -168,9 +189,17 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
   ).current;
 
   const categoryColor = getCategoryColor(card.category);
-  /** For now use static assets; later switch to card.image from backend. */
-  const imageSource = isFlashCard ? FLASH_CARD_ICON : isExplainCard ? EXPLAIN_CARD_BG : FLASH_CARD_ICON;
-  const isLocalImage = true; // static assets (require)
+  /** Use backend image when available (string URL or number for require); else fallback to static assets. */
+  const backendImage = card.image;
+  const imageSource =
+    typeof backendImage === 'string' && backendImage
+      ? { uri: backendImage }
+      : isFlashCard
+        ? FLASH_CARD_ICON
+        : isExplainCard
+          ? (typeof backendImage === 'number' ? backendImage : EXPLAIN_CARD_BG)
+          : FLASH_CARD_ICON;
+  const isLocalImage = typeof imageSource === 'number';
 
   // Stack card styling - Tinder-like effect
   const stackScale = isStackCard ? (stackIndex === 1 ? 0.96 : 0.92) : 1;
@@ -219,26 +248,32 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
             }}
             style={styles.cardContent}
           >
-            {isFlashCard ? (
-              <DetailOnlyCardLayout
-                card={card}
-                categoryColor={categoryColor}
-                onBookmarkPress={handleBookmarkPress}
-                showSavedFeedback={showSavedFeedback}
-                isSaved={isSaved}
-              />
-            ) : (
-              <FullBackgroundCardLayout
-                card={card}
-                imageSource={imageSource}
-                imageLoading={imageLoading}
-                isLocalImage={isLocalImage}
-                setImageLoading={setImageLoading}
-                onBookmarkPress={handleBookmarkPress}
-                showSavedFeedback={showSavedFeedback}
-                isSaved={isSaved}
-              />
-            )}
+            <View ref={cardContentRef} collapsable={false} style={styles.cardContentInner}>
+              {isFlashCard ? (
+                <DetailOnlyCardLayout
+                  card={card}
+                  categoryColor={categoryColor}
+                  onBookmarkPress={handleBookmarkPress}
+                  onDownloadPress={handleDownloadPress}
+                  showSavedFeedback={showSavedFeedback}
+                  showDownloadFeedback={showDownloadFeedback}
+                  isSaved={isSaved}
+                />
+              ) : (
+                <FullBackgroundCardLayout
+                  card={card}
+                  imageSource={imageSource}
+                  imageLoading={imageLoading}
+                  isLocalImage={isLocalImage}
+                  setImageLoading={setImageLoading}
+                  onBookmarkPress={handleBookmarkPress}
+                  onDownloadPress={handleDownloadPress}
+                  showSavedFeedback={showSavedFeedback}
+                  showDownloadFeedback={showDownloadFeedback}
+                  isSaved={isSaved}
+                />
+              )}
+            </View>
           </TouchableOpacity>
         </View>
       </View>
@@ -313,7 +348,7 @@ function CardDecoration({ variant }: { variant: 'expandable' | 'micro' }) {
 
 // ——— Expandable: Tinder-style hero card (big image, title on image, “Read more”)
 const hadisStyles = StyleSheet.create({
-  wrapper: { flex: 1, borderRadius: 24, position: 'relative', overflow: 'hidden' },
+  wrapper: { flex: 1, borderRadius: 32, position: 'relative', overflow: 'hidden' },
   inner: { flex: 1, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16, zIndex: 1 },
   tagRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 12 },
   tagPill: {
@@ -330,21 +365,34 @@ const hadisStyles = StyleSheet.create({
     ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
   },
   title: { fontSize: 20, fontWeight: '700', color: '#FFFFFF', textAlign: 'center', marginBottom: 14, ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }) },
-  iconContainer: { alignItems: 'center', justifyContent: 'center', marginVertical: 12, width: '100%', height: 100 },
-  iconImage: { width: '100%', height: '100%', maxWidth: 180 },
-  quoteText: { fontSize: 22, fontWeight: '500', color: '#FFFFFF', lineHeight: 32, textAlign: 'center', fontStyle: 'italic', marginBottom: 12, ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }) },
-  reference: { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.8)', textAlign: 'center', letterSpacing: 0.8, marginBottom: 12, ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }) },
+  iconContainer: { alignItems: 'center', justifyContent: 'center', marginVertical: 2, width: '100%' },
+  iconContainerBottom: { alignItems: 'center', justifyContent: 'center', marginTop: 4, marginBottom: 4, width: '100%' },
+  iconImage: { width: FLASH_ILLUSTRATION_WIDTH, height: FLASH_ILLUSTRATION_HEIGHT },
+  iconImageBottom: { width: FLASH_ILLUSTRATION_WIDTH, height: FLASH_ILLUSTRATION_HEIGHT },
+  quoteText: { fontSize: 22, fontWeight: '400', color: '#FFFFFF', lineHeight: 32, textAlign: 'center', fontStyle: 'italic', paddingTop: 6, marginBottom: 6, ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }) },
+  referenceCentered: {
+    alignSelf: 'center',
+    fontSize: 11,
+    fontWeight: '300',
+    color: 'rgba(255,255,255,0.8)',
+    textAlign: 'center',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  contentCenterWrap: {
+    width: '100%',
+    alignItems: 'center',
+  },
   spacer: { flex: 1, minHeight: 8 },
   bottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingTop: 12,
-    paddingBottom: 4,
+    paddingBottom: 12,
     position: 'relative',
   },
-  tapRowCentered: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  tapLabel: { fontSize: 13, color: 'rgba(255,255,255,0.9)', fontWeight: '600', ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }) },
   iconButton: {
     position: 'absolute',
     right: 0,
@@ -356,6 +404,24 @@ const hadisStyles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 10,
   },
+  iconButtonLeft: {
+    right: 52,
+  },
+  readsRow: {
+    position: 'absolute',
+    left: 16,
+    bottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 5,
+    gap: 6,
+  },
+  readsText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.85)',
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
   savedFeedback: { position: 'absolute', right: 16, bottom: 68, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, zIndex: 10 },
   savedFeedbackText: { fontSize: 13, fontWeight: '600', color: '#fff', ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }) },
 });
@@ -364,21 +430,35 @@ function DetailOnlyCardLayout({
   card,
   categoryColor,
   onBookmarkPress,
+  onDownloadPress,
   showSavedFeedback,
+  showDownloadFeedback,
   isSaved,
 }: {
   card: LearningCard;
   categoryColor: string;
   onBookmarkPress?: () => void;
+  onDownloadPress?: () => void;
   showSavedFeedback?: boolean;
+  showDownloadFeedback?: boolean;
   isSaved?: boolean;
 }) {
   const iconPlacement = card.iconPlacement ?? 'top';
-  /** Static icon for now; use card.image from backend later. */
-  const imageSource = FLASH_CARD_ICON;
+  /** Use backend image when available; else fallback to static icon. */
+  const backendImage = card.image;
+  const imageSource =
+    typeof backendImage === 'string' && backendImage
+      ? { uri: backendImage }
+      : typeof backendImage === 'number'
+        ? backendImage
+        : FLASH_CARD_ICON;
   const imageBlock = (
-    <View style={hadisStyles.iconContainer}>
-      <Image source={imageSource} style={hadisStyles.iconImage} resizeMode="contain" />
+    <View style={iconPlacement === 'bottom' ? hadisStyles.iconContainerBottom : hadisStyles.iconContainer}>
+      <Image
+        source={imageSource}
+        style={iconPlacement === 'bottom' ? hadisStyles.iconImageBottom : hadisStyles.iconImage}
+        resizeMode="contain"
+      />
     </View>
   );
   const bgColor = card.cardColor ?? categoryColor;
@@ -387,24 +467,31 @@ function DetailOnlyCardLayout({
     <View style={[hadisStyles.wrapper, { backgroundColor: bgColor }]}>
       <CardDecoration variant="micro" />
       <View style={hadisStyles.inner}>
-        <View style={hadisStyles.tagRow}>
-          <View style={hadisStyles.tagPill}>
-            <Text style={hadisStyles.tagText}>{tagLabel}</Text>
+        <View style={hadisStyles.contentCenterWrap}>
+          <View style={hadisStyles.tagRow}>
+            <View style={hadisStyles.tagPill}>
+              <Text style={hadisStyles.tagText}>{tagLabel}</Text>
+            </View>
           </View>
+          <Text style={hadisStyles.title}>{card.title}</Text>
+          {iconPlacement === 'top' && imageBlock}
+          <Text style={hadisStyles.quoteText}>{card.short_text}</Text>
+          {card.reference ? (
+            <Text style={hadisStyles.referenceCentered}>
+              ~ {card.reference.trim().toUpperCase()} ~
+            </Text>
+          ) : null}
+          {iconPlacement === 'bottom' && imageBlock}
         </View>
-        <Text style={hadisStyles.title} numberOfLines={2}>{card.title}</Text>
-        {iconPlacement === 'top' && imageBlock}
-        <Text style={hadisStyles.quoteText} numberOfLines={4}>{card.short_text}</Text>
-        {card.reference ? (
-          <Text style={hadisStyles.reference}>{card.reference.toUpperCase()}</Text>
-        ) : null}
-        {iconPlacement === 'bottom' && imageBlock}
         <View style={hadisStyles.spacer} />
         <View style={hadisStyles.bottomRow}>
-          <View style={hadisStyles.tapRowCentered}>
-            <Text style={hadisStyles.tapLabel}>Swipe for next</Text>
-            <Ionicons name="arrow-up-outline" size={18} color="rgba(255,255,255,0.9)" />
-          </View>
+          <TouchableOpacity
+            style={[hadisStyles.iconButton, hadisStyles.iconButtonLeft]}
+            onPress={() => onDownloadPress?.()}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="cloud-download-outline" size={22} color="rgba(255,255,255,0.95)" />
+          </TouchableOpacity>
           <TouchableOpacity
             style={hadisStyles.iconButton}
             onPress={() => onBookmarkPress?.()}
@@ -418,9 +505,22 @@ function DetailOnlyCardLayout({
           </TouchableOpacity>
         </View>
       </View>
+      <View style={hadisStyles.readsRow} pointerEvents="none">
+        <Ionicons name="people-outline" size={16} color="rgba(255,255,255,0.85)" />
+        <Text style={hadisStyles.readsText}>
+          {typeof card.reads === 'number'
+            ? `${card.reads} learned this`
+            : '320 learned this'}
+        </Text>
+      </View>
       {showSavedFeedback && (
         <View style={hadisStyles.savedFeedback}>
           <Text style={hadisStyles.savedFeedbackText}>Bookmarked</Text>
+        </View>
+      )}
+      {showDownloadFeedback && (
+        <View style={hadisStyles.savedFeedback}>
+          <Text style={hadisStyles.savedFeedbackText}>Saved to photos</Text>
         </View>
       )}
     </View>
@@ -435,7 +535,9 @@ function FullBackgroundCardLayout({
   isLocalImage,
   setImageLoading,
   onBookmarkPress,
+  onDownloadPress,
   showSavedFeedback,
+  showDownloadFeedback,
   isSaved,
 }: {
   card: LearningCard;
@@ -444,10 +546,21 @@ function FullBackgroundCardLayout({
   isLocalImage: boolean;
   setImageLoading: (v: boolean) => void;
   onBookmarkPress?: () => void;
+  onDownloadPress?: () => void;
   showSavedFeedback?: boolean;
+  showDownloadFeedback?: boolean;
   isSaved?: boolean;
 }) {
   const tagLabel = getDetailOnlyTag(card.category);
+  const xAlign = card.titleInX ?? 'center';
+  const yAlign = card.titleInY ?? 'center';
+  const alignment = xAlign as 'left' | 'center' | 'right';
+  const titleWrapAlign = alignment === 'left' ? 'flex-start' : alignment === 'right' ? 'flex-end' : 'center';
+  const titleWrapJustify =
+    yAlign === 'top' ? 'flex-start' : yAlign === 'bottom' ? 'flex-end' : 'center';
+  const isBigTitle = card.titleSize === 'big';
+  const titleAlign = alignment as 'left' | 'center' | 'right';
+  const hasPreview = typeof card.short_text === 'string' && card.short_text.trim() !== '';
   return (
     <View style={fullBgStyles.wrapper}>
       <Image
@@ -470,14 +583,41 @@ function FullBackgroundCardLayout({
           <Text style={fullBgStyles.tagText}>{tagLabel}</Text>
         </View>
       </View>
-      <View style={fullBgStyles.titleWrap} pointerEvents="none">
-        <Text style={fullBgStyles.title} numberOfLines={3}>{card.title}</Text>
+      <View
+        style={[
+          fullBgStyles.titleWrap,
+          { alignItems: titleWrapAlign, justifyContent: titleWrapJustify },
+        ]}
+        pointerEvents="none"
+      >
+        <View style={fullBgStyles.titleBlock}>
+          <Text
+            style={[
+              fullBgStyles.title,
+              { textAlign: titleAlign },
+              isBigTitle && fullBgStyles.titleBig,
+            ]}
+          // numberOfLines={3}
+          >
+            {card.title}
+          </Text>
+          {hasPreview && (
+            <Text
+              style={[fullBgStyles.preview, { textAlign: titleAlign }]}
+            >
+              {card.short_text!.trim()}
+            </Text>
+          )}
+        </View>
       </View>
       <View style={fullBgStyles.bottomRow}>
-        <View style={fullBgStyles.tapRowCentered}>
-          <Text style={fullBgStyles.tapLabel}>Swipe for next</Text>
-          <Ionicons name="arrow-up-outline" size={18} color="rgba(255,255,255,0.9)" />
-        </View>
+        <TouchableOpacity
+          style={[fullBgStyles.iconButton, fullBgStyles.iconButtonLeft]}
+          onPress={() => onDownloadPress?.()}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="download-outline" size={22} color="rgba(255,255,255,0.95)" />
+        </TouchableOpacity>
         <TouchableOpacity
           style={fullBgStyles.iconButton}
           onPress={() => onBookmarkPress?.()}
@@ -495,6 +635,11 @@ function FullBackgroundCardLayout({
           <Text style={fullBgStyles.savedFeedbackText}>Bookmarked</Text>
         </View>
       )}
+      {showDownloadFeedback && (
+        <View style={fullBgStyles.savedFeedback}>
+          <Text style={fullBgStyles.savedFeedbackText}>Saved to photos</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -502,7 +647,7 @@ function FullBackgroundCardLayout({
 const fullBgStyles = StyleSheet.create({
   wrapper: {
     flex: 1,
-    borderRadius: 24,
+    borderRadius: 32,
     overflow: 'hidden',
     position: 'relative',
   },
@@ -548,8 +693,8 @@ const fullBgStyles = StyleSheet.create({
     position: 'absolute',
     left: 24,
     right: 24,
-    top: 0,
-    bottom: 0,
+    top: 56,
+    bottom: 72,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 2,
@@ -566,6 +711,26 @@ const fullBgStyles = StyleSheet.create({
     textShadowRadius: 8,
     ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
   },
+  titleBig: {
+    fontSize: 38,
+    lineHeight: 46,
+    letterSpacing: -0.5,
+  },
+  titleBlock: {
+    alignItems: 'stretch',
+  },
+  preview: {
+    marginTop: 8,
+    fontSize: 15,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.92)',
+    lineHeight: 20,
+    letterSpacing: 0.1,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }),
+  },
   bottomRow: {
     position: 'absolute',
     left: 0,
@@ -573,22 +738,11 @@ const fullBgStyles = StyleSheet.create({
     bottom: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     paddingHorizontal: 20,
     paddingBottom: 20,
     paddingTop: 16,
     zIndex: 3,
-  },
-  tapRowCentered: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  tapLabel: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.9)',
-    fontWeight: '600',
-    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
   },
   iconButton: {
     width: 44,
@@ -596,121 +750,8 @@ const fullBgStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  savedFeedback: {
-    position: 'absolute',
-    right: 16,
-    bottom: 68,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    zIndex: 10,
-  },
-  savedFeedbackText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#fff',
-    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
-  },
-});
-
-// Default PNG for non-expanding cards (muslim bride and groom illustration)
-const MICRO_CARD_IMAGE_URI =
-  'https://cdn3d.iconscout.com/3d/premium/thumb/ramadhan-calender-3d-icon-png-download-11211796.png';
-
-// Quote card styles
-const quoteStyles = StyleSheet.create({
-  wrapper: {
-    flex: 1,
-    borderRadius: 24,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  inner: {
-    flex: 1,
-    paddingHorizontal: 28,
-    paddingTop: 24,
-    paddingBottom: 20,
-    zIndex: 1,
-    justifyContent: 'space-between',
-  },
-  heading: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    textAlign: 'center',
-    marginBottom: 20,
-    letterSpacing: 0.3,
-    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
-  },
-  iconContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    width: '100%',
-    height: 120,
-  },
-  iconContainerBottom: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-    width: '100%',
-    height: 100,
-  },
-  iconImage: {
-    width: '100%',
-    height: '100%',
-    maxWidth: 200,
-  },
-  spacer: {
-    flex: 1,
-    minHeight: 20,
-  },
-  quoteText: {
-    fontSize: 26,
-    fontWeight: '500',
-    color: '#FFFFFF',
-    lineHeight: 38,
-    textAlign: 'center',
-    fontStyle: 'italic',
-    letterSpacing: 0.3,
-    marginBottom: 16,
-    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }),
-  },
-  reference: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.75)',
-    textAlign: 'center',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 20,
-    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
-  },
-  tapRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingTop: 8,
-  },
-  tapLabel: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.95)',
-    fontWeight: '600',
-    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
-  },
-  bookmarkBottomRight: {
-    position: 'absolute',
-    right: 16,
-    bottom: 16,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
+  iconButtonLeft: {
+    marginRight: 8,
   },
   savedFeedback: {
     position: 'absolute',
@@ -729,117 +770,6 @@ const quoteStyles = StyleSheet.create({
     ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
   },
 });
-
-// ——— Quote card: Beautiful quote-style layout for Hadith and quotes
-function QuoteCardLayout({
-  card,
-  topicColor,
-  onBookmarkPress,
-  showSavedFeedback,
-  isSaved,
-}: {
-  card: LearningCard;
-  topicColor: string;
-  onBookmarkPress?: () => void;
-  showSavedFeedback?: boolean;
-  isSaved?: boolean;
-}) {
-  const imageUri = typeof card.image === 'string' ? card.image : MICRO_CARD_IMAGE_URI;
-  return (
-    <View style={[quoteStyles.wrapper, { backgroundColor: topicColor }]}>
-      <CardDecoration variant="micro" />
-      <View style={quoteStyles.inner}>
-        <Text style={quoteStyles.heading} numberOfLines={2}>{card.title}</Text>
-        <View style={quoteStyles.iconContainer}>
-          <Image
-            source={{ uri: imageUri }}
-            style={quoteStyles.iconImage}
-            resizeMode="contain"
-          />
-        </View>
-        <Text style={quoteStyles.quoteText}>{card.short_text}</Text>
-        {card.reference && (
-          <Text style={quoteStyles.reference}>{card.reference}</Text>
-        )}
-        <View style={quoteStyles.spacer} />
-        <View style={quoteStyles.tapRow}>
-          <Text style={quoteStyles.tapLabel}>Swipe for next</Text>
-          <Ionicons name="arrow-up-outline" size={18} color="rgba(255,255,255,0.9)" />
-        </View>
-      </View>
-      <TouchableOpacity
-        style={quoteStyles.bookmarkBottomRight}
-        onPress={() => onBookmarkPress?.()}
-        activeOpacity={0.8}
-      >
-        <Ionicons
-          name={isSaved || showSavedFeedback ? 'bookmark' : 'bookmark-outline'}
-          size={22}
-          color="rgba(255,255,255,0.95)"
-        />
-      </TouchableOpacity>
-      {showSavedFeedback && (
-        <View style={quoteStyles.savedFeedback}>
-          <Text style={quoteStyles.savedFeedbackText}>Bookmarked</Text>
-        </View>
-      )}
-    </View>
-  );
-}
-
-// ——— Non-expandable: Illustration-style card (solid color + PNG image at bottom)
-function MicroCardLayout({
-  card,
-  topicColor,
-  onBookmarkPress,
-  showSavedFeedback,
-  isSaved,
-}: {
-  card: LearningCard;
-  topicColor: string;
-  onBookmarkPress?: () => void;
-  showSavedFeedback?: boolean;
-  isSaved?: boolean;
-}) {
-  const imageUri = typeof card.image === 'string' ? card.image : MICRO_CARD_IMAGE_URI;
-  return (
-    <View style={[microStyles.wrapper, { backgroundColor: topicColor }]}>
-      <CardDecoration variant="micro" />
-      <View style={microStyles.inner}>
-        <Text style={microStyles.microTitle} numberOfLines={2}>{card.title}</Text>
-        <Text style={microStyles.microPreview} numberOfLines={8}>{card.short_text}</Text>
-        <View style={microStyles.imageSpacer} />
-        <View style={microStyles.bottomImageContainer}>
-          <Image
-            source={{ uri: imageUri }}
-            style={microStyles.bottomImage}
-            resizeMode="contain"
-          />
-        </View>
-        <View style={microStyles.tapRow}>
-          <Text style={microStyles.tapLabel}>Swipe for next</Text>
-          <Ionicons name="arrow-up-outline" size={18} color="rgba(255,255,255,0.9)" />
-        </View>
-      </View>
-      <TouchableOpacity
-        style={microStyles.bookmarkBottomRight}
-        onPress={() => onBookmarkPress?.()}
-        activeOpacity={0.8}
-      >
-        <Ionicons
-          name={isSaved || showSavedFeedback ? 'bookmark' : 'bookmark-outline'}
-          size={22}
-          color="rgba(255,255,255,0.95)"
-        />
-      </TouchableOpacity>
-      {showSavedFeedback && (
-        <View style={microStyles.savedFeedback}>
-          <Text style={microStyles.savedFeedbackText}>Bookmarked</Text>
-        </View>
-      )}
-    </View>
-  );
-}
 
 const CARD_WIDTH = SCREEN_WIDTH - 40;
 const calculateCardHeight = (): number => {
@@ -855,65 +785,59 @@ const styles = StyleSheet.create({
   card: {
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
-    borderRadius: 28,
+    borderRadius: 32,
     position: 'absolute',
     overflow: 'visible',
+    backgroundColor: 'transparent',
   },
   stackCardShadow: {
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
-    elevation: 16,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.26,
+    shadowRadius: 22,
+    elevation: 14,
   },
   stackCardWrapper: {
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
     elevation: 8,
   },
   cardWrapper: {
     flex: 1,
-    borderRadius: 28,
-    padding: 4,
+    borderRadius: 32,
+    padding: 0,
+    overflow: 'hidden',
+    backgroundColor: 'transparent',
   },
   cardWrapperExpandable: {
-    backgroundColor: '#0F0F0F',
+    backgroundColor: 'transparent',
   },
   cardWrapperMicro: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'transparent',
   },
   glassCard: {
     flex: 1,
-    borderRadius: 24,
+    borderRadius: 32,
     overflow: 'hidden',
+    backgroundColor: 'transparent',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.32,
+    shadowRadius: 32,
+    elevation: 20,
   },
   glassCardExpandable: {
-    backgroundColor: '#111',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.45,
-    shadowRadius: 32,
-    elevation: 24,
+    backgroundColor: 'transparent',
   },
   glassCardMicro: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
-    elevation: 12,
+    backgroundColor: 'transparent',
   },
   cardContent: {
+    flex: 1,
+  },
+  cardContentInner: {
     flex: 1,
   },
 });
@@ -925,98 +849,5 @@ const decorationStyles = StyleSheet.create({
   },
   star: {
     position: 'absolute',
-  },
-});
-
-const microStyles = StyleSheet.create({
-  wrapper: {
-    flex: 1,
-    borderRadius: 24,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  inner: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 22,
-    paddingBottom: 20,
-    justifyContent: 'space-between',
-    zIndex: 1,
-  },
-  microTitle: {
-    textAlign: 'center',
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    lineHeight: 28,
-    letterSpacing: -0.3,
-    textShadowColor: 'rgba(0,0,0,0.2)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
-  },
-  microPreview: {
-    textAlign: 'center',
-    fontSize: 16,
-    color: 'rgba(255,255,255,0.92)',
-    lineHeight: 24,
-    marginTop: 16,
-    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif' } }),
-  },
-  imageSpacer: {
-    flex: 1,
-    minHeight: 8,
-  },
-  bottomImageContainer: {
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: 280,
-    height: 220,
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-  },
-  bottomImage: {
-    width: '100%',
-    height: '100%',
-  },
-  tapRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  tapLabel: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.95)',
-    fontWeight: '600',
-    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
-  },
-  bookmarkBottomRight: {
-    position: 'absolute',
-    right: 16,
-    bottom: 16,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  savedFeedback: {
-    position: 'absolute',
-    right: 16,
-    bottom: 68,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    zIndex: 10,
-  },
-  savedFeedbackText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#fff',
-    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
   },
 });

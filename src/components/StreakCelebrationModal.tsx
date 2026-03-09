@@ -36,7 +36,7 @@ export const StreakCelebrationModal: React.FC<StreakCelebrationModalProps> = ({
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `I'm on a ${streakDays} day learning streak with Barkat Learn! 🔥 Keep the flame lit.`,
+        message: `I'm on a ${streakDays} day learning streak with Barkat Daily! 🔥 Keep the flame lit.`,
         title: 'My learning streak',
       });
     } catch (_) { }

@@ -546,6 +546,8 @@ export const fetchBookmarkedCards = async (
 export interface CategoryStatsByCategory {
   total: number;
   completed: number;
+  image?: string;
+  backgroundColor?: string;
 }
 
 export interface StatsOverview {
@@ -719,6 +721,7 @@ export const loginWithApple = async (
     return { success: true, token: null, email: email ?? null };
   }
   try {
+    console.log(API_BASE_URL);
     const res = await fetch(`${API_BASE_URL}/api/users/apple-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -726,6 +729,9 @@ export const loginWithApple = async (
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
+      console.log('[loginWithApple] Error response body:', text);
+      console.log('[loginWithApple] Error response status:', res.status);
+      console.log('[loginWithApple] Error response status text:', res.statusText);
       const message = text || res.statusText || 'Apple login failed';
       return { success: false, error: message };
     }

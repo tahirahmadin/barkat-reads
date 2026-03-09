@@ -10,6 +10,7 @@ import {
   Image,
   RefreshControl,
   ActivityIndicator,
+  ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,8 +29,11 @@ const CARD_WIDTH = (SCREEN_WIDTH - PADDING * 2 - GAP) / 2;
 const CARD_MIN_HEIGHT = 180;
 // Width for 2.5 cards visible: (screen - padding*2 - gap*2) / 2.5
 const ARTICLE_CARD_WIDTH = (SCREEN_WIDTH - PADDING * 2 - GAP * 2) / 2.2;
+const ARTICLE_CARD_HEIGHT = 200;
 const BOOKMARK_CARD_IMAGE_URI =
   'https://cdn3d.iconscout.com/3d/premium/thumb/ramadhan-calender-3d-icon-png-download-11211796.png';
+
+const PATTERN_IMG = require('../../assets/pattern.avif');
 
 const getCategoryColor = (category: ContentCategory): string => {
   const colors: Record<ContentCategory, string> = {
@@ -40,6 +44,42 @@ const getCategoryColor = (category: ContentCategory): string => {
     'Islamic Facts': '#27ae60',
   };
   return colors[category] ?? '#718096';
+};
+
+const getArticleTagLabel = (category: ContentCategory): string => {
+  const tags: Record<ContentCategory, string> = {
+    Hadis: 'HADIS',
+    Dua: 'DUA',
+    'Prophet Stories': 'PROPHET STORIES',
+    'Quran Surah': 'QURAN SURAH',
+    'Islamic Facts': 'ISLAMIC FACTS',
+  };
+  return tags[category] ?? category.toUpperCase();
+};
+
+/** More text → smaller fontSize, less text → larger fontSize, so full text fits. */
+const getScaledTitleStyle = (
+  text: string,
+  baseStyle: { fontSize: number; lineHeight: number },
+  opts: { minFontSize?: number; maxFontSize?: number } = {}
+): { fontSize: number; lineHeight: number } => {
+  const { minFontSize = 11, maxFontSize = baseStyle.fontSize } = opts;
+  const len = (text || '').trim().length;
+  if (len <= 25) return { fontSize: maxFontSize, lineHeight: baseStyle.lineHeight };
+  if (len <= 50) {
+    const fontSize = Math.max(minFontSize, maxFontSize - 2);
+    return { fontSize, lineHeight: fontSize + 6 };
+  }
+  if (len <= 80) {
+    const fontSize = Math.max(minFontSize, maxFontSize - 4);
+    return { fontSize, lineHeight: fontSize + 5 };
+  }
+  if (len <= 120) {
+    const fontSize = Math.max(minFontSize, maxFontSize - 6);
+    return { fontSize, lineHeight: fontSize + 4 };
+  }
+  const fontSize = minFontSize;
+  return { fontSize, lineHeight: fontSize + 4 };
 };
 
 function BookmarkCardDecoration() {
@@ -140,20 +180,66 @@ export const BookmarkScreen: React.FC = () => {
   const renderCard = (card: LearningCard, isRow?: boolean) => {
     const categoryColor = getCategoryColor(card.category);
     const imageUri = typeof card.image === 'string' ? card.image : BOOKMARK_CARD_IMAGE_URI;
+
+    // Article cards: full background image with text overlay (same as feed)
+    if (isRow) {
+      const tagLabel = getArticleTagLabel(card.category);
+      const isBigTitle = card.titleSize === 'big';
+      // Smaller font range so full title fits in card without cropping
+      const baseFont = isBigTitle ? { fontSize: 14, lineHeight: 19 } : { fontSize: 13, lineHeight: 18 };
+      const maxFont = isBigTitle ? 15 : 14;
+      return (
+        <TouchableOpacity
+          key={card.id}
+          style={[styles.card, styles.articleCard]}
+          activeOpacity={0.95}
+          onPress={() => handleCardPress(card)}
+        >
+          <Image
+            source={{ uri: imageUri }}
+            style={articleCardStyles.backgroundImage}
+            resizeMode="cover"
+          />
+          <View style={articleCardStyles.overlay} pointerEvents="none" />
+          <View style={articleCardStyles.tagRow} pointerEvents="none">
+            <View style={articleCardStyles.tagPill}>
+              <Text style={articleCardStyles.tagText}>{tagLabel}</Text>
+            </View>
+          </View>
+          <View style={articleCardStyles.titleWrap} pointerEvents="none">
+            <Text
+              style={[
+                articleCardStyles.title,
+                getScaledTitleStyle(card.title, baseFont, { minFontSize: 10, maxFontSize: maxFont }),
+              ]}
+            >
+              {card.title}
+            </Text>
+          </View>
+          <View style={articleCardStyles.bottomRow}>
+            <Text style={articleCardStyles.tapLabel}>Tap to read</Text>
+            <Ionicons name="open-outline" size={16} color="rgba(255,255,255,0.9)" />
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    // Quick reads (flash cards): solid color + small image
     return (
       <TouchableOpacity
         key={card.id}
-        style={[
-          styles.card,
-          isRow && styles.articleCard,
-          { backgroundColor: categoryColor },
-        ]}
+        style={[styles.card, { backgroundColor: categoryColor }]}
         activeOpacity={0.95}
         onPress={() => handleCardPress(card)}
       >
         <BookmarkCardDecoration />
         <View style={styles.inner}>
-          <Text style={styles.title} numberOfLines={2}>
+          <Text
+            style={[
+              styles.title,
+              getScaledTitleStyle(card.title, { fontSize: 15, lineHeight: 20 }, { minFontSize: 11, maxFontSize: 16 }),
+            ]}
+          >
             {card.title}
           </Text>
           <View style={styles.spacer} />
@@ -175,7 +261,13 @@ export const BookmarkScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <View style={styles.bg} pointerEvents="none" />
+      <View style={styles.backgroundLayer} pointerEvents="none">
+        <View style={styles.bgBase} />
+        <View style={styles.bgPatternWrap}>
+          <ImageBackground source={PATTERN_IMG} style={styles.bgPattern} resizeMode="repeat" />
+        </View>
+      </View>
+      <View style={styles.contentLayer}>
       <AppHeader title="Bookmarks" />
       {authToken && loading && !refreshing && apiBookmarks === null ? (
         <View style={styles.centered}>
@@ -242,6 +334,7 @@ export const BookmarkScreen: React.FC = () => {
           )}
         </ScrollView>
       )}
+      </View>
       {selectedCard && (
         <DetailReaderModal
           visible={modalVisible}
@@ -270,14 +363,106 @@ const decorationStyles = StyleSheet.create({
   },
 });
 
+/** Article card: full background image + overlay + text (matches feed style) */
+const articleCardStyles = StyleSheet.create({
+  backgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    zIndex: 1,
+  },
+  tagRow: {
+    position: 'absolute',
+    top: 10,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 3,
+  },
+  tagPill: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+  },
+  tagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.6,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  titleWrap: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    top: 44,
+    bottom: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    lineHeight: 22,
+    letterSpacing: -0.2,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+  bottomRow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    paddingTop: 10,
+    zIndex: 3,
+  },
+  tapLabel: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.9)',
+    fontWeight: '600',
+    ...Platform.select({ ios: { fontFamily: 'System' }, android: { fontFamily: 'sans-serif-medium' } }),
+  },
+});
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f2ede8',
+    backgroundColor: '#e0d8ce',
   },
-  bg: {
+  backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#f2ede8',
+  },
+  bgBase: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#e6dfd6',
+  },
+  bgPatternWrap: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.05,
+  },
+  bgPattern: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  contentLayer: {
+    flex: 1,
   },
   scroll: {
     flex: 1,
@@ -323,6 +508,7 @@ const styles = StyleSheet.create({
   },
   articleCard: {
     width: ARTICLE_CARD_WIDTH,
+    height: ARTICLE_CARD_HEIGHT,
     marginRight: 0,
   },
   grid: {

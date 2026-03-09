@@ -112,6 +112,7 @@ export const HomeScreen: React.FC = () => {
               detailOpenedCardIds={detailOpenedCardIds}
               onDetailOpen={markDetailOpened}
               onDetailFinish={markDetailAsFinished}
+              onReset={loadContent}
               bookmarkedCardIds={bookmarkedCardIds}
             />
           )}
